@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">LPPL PMS</string>
-    <string name="pms_url">https://script.google.com/macros/s/AKfycbyFoSSWLcOZ-ehP_wrvrSoE3KYPiclmdWjntj7jxpQ6AzdedFSg1sFWg3sACG2AILtv/exec</string>
+    <string name="pms_url">https://script.google.com/macros/s/AKfycbyFoSSWLcOZ-ehP_wrvrSoE3KYPicImdWjntj7jxpQ6AzdedFSg1sFWg3sACG2AILtv/exec</string>
 </resources>
