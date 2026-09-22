@@ -265,21 +265,21 @@ public class MainActivity extends Activity {
                 "var st=document.createElement('style');" +
                 "st.id='lppl-mobile-compact-style';" +
                 "st.textContent=" +
-                "'.lppl-native-list-row{background:#fff;border:1px solid #e5e7eb;border-radius:12px;margin:8px 12px;padding:10px 12px;box-shadow:0 1px 2px rgba(0,0,0,.03);font-family:inherit;}' +" +
+                "'.lppl-native-list-row{position:relative;background:#fff;border:1px solid #e3e9e4;border-left:4px solid #39a844;border-radius:13px;margin:8px 12px;padding:10px 11px;box-shadow:0 2px 7px rgba(0,0,0,.05);font-family:inherit;}' +" +
                 "'.lppl-native-row-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;}' +" +
-                "'.lppl-native-row-id{font-size:12px;font-weight:800;color:#1f2937;white-space:nowrap;}' +" +
-                "'.lppl-native-row-title{font-size:14px;font-weight:700;color:#111827;margin-top:4px;line-height:1.25;}' +" +
-                "'.lppl-native-row-meta{display:flex;flex-wrap:wrap;gap:5px 10px;margin-top:6px;font-size:11px;color:#6b7280;}' +" +
-                "'.lppl-native-row-actions{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;}' +" +
+                "'.lppl-native-row-id{font-size:11px;font-weight:800;color:#59636a;white-space:nowrap;text-transform:uppercase;letter-spacing:.2px;}' +" +
+                "'.lppl-native-row-title{font-size:15px;font-weight:750;color:#161b18;margin-top:4px;line-height:1.28;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}' +" +
+                "'.lppl-native-row-meta{display:flex;flex-wrap:wrap;gap:4px 9px;margin-top:6px;font-size:11px;color:#737c76;line-height:1.35;}' +" +
+                "'.lppl-native-row-actions{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;border-top:1px solid #eef1ee;padding-top:7px;}' +" +
                 "'.lppl-native-row-actions button{min-height:32px!important;padding:5px 10px!important;font-size:12px!important;border-radius:8px!important;}' +" +
                 "'.lppl-native-chip{display:inline-block;border-radius:999px;padding:4px 8px;font-size:10px;font-weight:700;background:#eef2f0;color:#374151;white-space:nowrap;}' +" +
                 "'.lppl-native-chip.pending{background:#fff3c4;color:#7a5a00;}' +" +
                 "'.lppl-native-chip.closed,.lppl-native-chip.completed{background:#dff5e3;color:#238636;}' +" +
-                "'.lppl-native-filter-toggle{margin:8px 12px 4px;padding:8px 12px;border:1px solid #d1d5db;background:#fff;color:#238636;border-radius:9px;font-size:12px;font-weight:700;}' +" +
+                "'.lppl-native-filter-toggle{margin:8px 12px 4px;padding:8px 12px;border:1px solid #cfd8d1;background:#fff;color:#278c36;border-radius:10px;font-size:12px;font-weight:800;box-shadow:0 1px 3px rgba(0,0,0,.04);}' +" +
                 "'.lppl-native-filter-box{margin:6px 12px!important;padding:10px!important;}' +" +
                 "'.lppl-native-filter-box label{font-size:11px!important;margin-bottom:3px!important;}' +" +
                 "'.lppl-native-filter-box input,.lppl-native-filter-box select{min-height:36px!important;font-size:12px!important;padding:6px 8px!important;}' +" +
-                "'.lppl-native-original-hidden{display:none!important;}' +" +
+                "'.lppl-native-original-hidden{display:none!important;}' +'.lppl-native-fab{position:fixed!important;right:16px!important;bottom:18px!important;z-index:99998!important;background:#39a844!important;color:#fff!important;border:none!important;border-radius:15px!important;padding:12px 16px!important;font-weight:800!important;font-size:13px!important;box-shadow:0 8px 22px rgba(34,139,53,.28)!important;}' +'.lppl-native-seg-wrap{display:flex!important;gap:4px!important;margin:7px 12px!important;padding:4px!important;border-radius:14px!important;background:#e8f3ea!important;overflow:hidden!important;}' +'.lppl-native-seg{flex:1!important;text-align:center!important;border-radius:11px!important;padding:8px 10px!important;margin:0!important;min-height:34px!important;}' +'body{padding-bottom:78px!important;background:#f6f8f6!important;}' +" +
                 "'@media(max-width:700px){h1{font-size:22px!important;margin:10px 0!important;}h2{font-size:18px!important;}body{overflow-x:hidden!important;}}';" +
                 "(document.head||document.documentElement).appendChild(st);" +
                 "}" +
@@ -315,10 +315,10 @@ public class MainActivity extends Activity {
                 "if(!rid||!desc)return;" +
                 "var row=document.createElement('div');row.className='lppl-native-list-row';" +
                 "var statusClass=(status||'').toLowerCase().replace(/[^a-z]+/g,'-');" +
-                "row.innerHTML='<div class=\"lppl-native-row-head\"><div><div class=\"lppl-native-row-id\">Task ID: '+rid+'</div><div class=\"lppl-native-row-title\"></div></div><span class=\"lppl-native-chip '+statusClass+'\"></span></div><div class=\"lppl-native-row-meta\"></div><div class=\"lppl-native-row-actions\"></div>';" +
+                "row.innerHTML='<div class=\"lppl-native-row-head\"><div><div class=\"lppl-native-row-id\">'+rid+' · '+(freq||'TASK')+'</div><div class=\"lppl-native-row-title\"></div></div><span class=\"lppl-native-chip '+statusClass+'\"></span></div><div class=\"lppl-native-row-meta\"></div><div class=\"lppl-native-row-actions\"></div>';" +
                 "row.querySelector('.lppl-native-row-title').textContent=desc;" +
                 "row.querySelector('.lppl-native-chip').textContent=status||'Pending';" +
-                "var meta=[];if(date)meta.push(date);if(cat)meta.push(cat);if(freq)meta.push(freq);" +
+                "var meta=[];if(date)meta.push('📅 '+date);if(cat)meta.push(cat);" +
                 "row.querySelector('.lppl-native-row-meta').textContent=meta.join(' • ');" +
                 "var acts=row.querySelector('.lppl-native-row-actions');" +
                 "var btns=card.querySelectorAll('button');for(var i=0;i<btns.length;i++){var bt=norm(btns[i].innerText);if(bt&&bt.length<30)acts.appendChild(clickProxy(btns[i],bt));}" +
@@ -334,7 +334,7 @@ public class MainActivity extends Activity {
                 "row.innerHTML='<div class=\"lppl-native-row-head\"><div><div class=\"lppl-native-row-id\">'+id+'</div><div class=\"lppl-native-row-title\"></div></div><span class=\"lppl-native-chip '+statusClass+'\"></span></div><div class=\"lppl-native-row-meta\"></div><div class=\"lppl-native-row-actions\"></div>';" +
                 "row.querySelector('.lppl-native-row-title').textContent=desc;" +
                 "row.querySelector('.lppl-native-chip').textContent=status||'';" +
-                "var meta=[];if(dept)meta.push(dept);if(urg)meta.push(urg);if(raised)meta.push(raised);" +
+                "var meta=[];if(dept)meta.push(dept);if(urg)meta.push('Urgency: '+urg);if(raised)meta.push('By '+raised);" +
                 "row.querySelector('.lppl-native-row-meta').textContent=meta.join(' • ');" +
                 "var acts=row.querySelector('.lppl-native-row-actions');" +
                 "var btns=card.querySelectorAll('button');for(var i=0;i<btns.length;i++){var bt=norm(btns[i].innerText);if(bt&&bt.length<30)acts.appendChild(clickProxy(btns[i],bt));}" +
@@ -354,10 +354,11 @@ public class MainActivity extends Activity {
                 "b.onclick=function(){var open=best.style.display==='none';best.style.display=open?'block':'none';b.textContent=open?'Filters ▴':'Filters ▾';};" +
                 "best.parentNode.insertBefore(b,best);" +
                 "}" +
+                "function decorateSegments(){" +                "var els=document.querySelectorAll('button,a,[role=button]');var found=[];" +                "for(var i=0;i<els.length;i++){var t=norm(els[i].innerText).toLowerCase();if(t==='my tasks'||t==='team tasks'||t==='my help tickets'||t==='team help tickets'||t==='my'||t==='team'){found.push(els[i]);}}" +                "for(var j=0;j<found.length;j++){found[j].classList.add('lppl-native-seg');var p=found[j].parentElement;if(p&&p.children.length<=4)p.classList.add('lppl-native-seg-wrap');}" +                "}" +                "function floatingNewTicket(){" +                "if(document.querySelector('.lppl-native-fab'))return;var els=document.querySelectorAll('button,a');" +                "for(var i=0;i<els.length;i++){var t=norm(els[i].innerText).toLowerCase();if(t==='+ new ticket'||t==='new ticket'||t==='create ticket'||t==='+ create ticket'){var b=document.createElement('button');b.className='lppl-native-fab';b.textContent='+ New Ticket';b.onclick=(function(src){return function(){try{src.click();}catch(e){}};})(els[i]);document.body.appendChild(b);break;}}" +                "}" +
                 "function enhance(){" +
                 "var taskCards=smallestCard(['RECURRING ID','TASK DESCRIPTION','TASK DATE','STATUS / RESULT']);for(var i=0;i<taskCards.length;i++)compactTask(taskCards[i]);" +
                 "var ticketCards=smallestCard(['TICKET ID','CREATED / DUE','DESCRIPTION','DEPARTMENT / CATEGORY','STATUS']);for(var j=0;j<ticketCards.length;j++)compactTicket(ticketCards[j]);" +
-                "collapseFilters();" +
+                "collapseFilters();decorateSegments();floatingNewTicket();" +
                 "}" +
                 "enhance();" +
                 "if(!window.__lpplCompactTimer){window.__lpplCompactTimer=setInterval(enhance,1200);}" +
