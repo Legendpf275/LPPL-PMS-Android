@@ -274,6 +274,34 @@ public class MainActivity extends Activity {
         });
     }
 
+    private void enterAppsScriptInnerAppIfNeeded(String url) {
+        if (url == null || !url.contains("script.google.com")) return;
+
+        String js =
+                "(function(){" +
+                "try{" +
+                "var frames=document.querySelectorAll('iframe');" +
+                "for(var i=0;i<frames.length;i++){" +
+                "var s=frames[i].src||'';" +
+                "if(s.indexOf('script.googleusercontent.com')>=0||s.indexOf('/macros/echo')>=0)return s;" +
+                "}" +
+                "return '';" +
+                "}catch(e){return '';}" +
+                "})();";
+
+        webView.evaluateJavascript(js, value -> {
+            try {
+                if (value == null || "null".equals(value) || "\"\"".equals(value)) return;
+                String src = new org.json.JSONArray("[" + value + "]").optString(0, "");
+                if (src == null || src.trim().isEmpty()) return;
+                if (src.contains("script.googleusercontent.com") || src.contains("/macros/echo")) {
+                    webView.loadUrl(src);
+                }
+            } catch (Exception ignored) {
+            }
+        });
+    }
+
     private void applySystemBarInsets(View root) {
         getWindow().setStatusBarColor(Color.rgb(57, 168, 68));
         getWindow().setNavigationBarColor(Color.WHITE);
