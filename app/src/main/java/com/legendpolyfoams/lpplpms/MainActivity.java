@@ -88,7 +88,7 @@ public class MainActivity extends Activity {
         s.setSupportZoom(false);
         s.setBuiltInZoomControls(false);
         s.setDisplayZoomControls(false);
-        s.setCacheMode(WebSettings.LOAD_DEFAULT);
+        s.setCacheMode(WebSettings.LOAD_NO_CACHE);
         s.setMediaPlaybackRequiresUserGesture(false);
 
         CookieManager cookies = CookieManager.getInstance();
@@ -169,6 +169,12 @@ public class MainActivity extends Activity {
             public void onPageFinished(WebView view, String url) {
                 progress.setVisibility(View.GONE);
                 CookieManager.getInstance().flush();
+
+                // Apps Script renders the actual app inside an iframe. Enter that
+                // inner document first so the Android-specific UI can style the
+                // real PMS DOM instead of only the outer Google shell.
+                enterAppsScriptInnerAppIfNeeded(url);
+
                 hideAppsScriptWarningBanner();
                 installMobileCompactUi();
                 installBlobDownloadBridge();
@@ -239,6 +245,34 @@ public class MainActivity extends Activity {
         });
     }
 
+
+    private void enterAppsScriptInnerAppIfNeeded(String url) {
+        if (url == null || !url.contains("script.google.com")) return;
+
+        String js =
+                "(function(){" +
+                "try{" +
+                "var frames=document.querySelectorAll('iframe');" +
+                "for(var i=0;i<frames.length;i++){" +
+                "var s=frames[i].src||'';" +
+                "if(s.indexOf('script.googleusercontent.com')>=0||s.indexOf('/macros/echo')>=0)return s;" +
+                "}" +
+                "return '';" +
+                "}catch(e){return '';}" +
+                "})();";
+
+        webView.evaluateJavascript(js, value -> {
+            try {
+                if (value == null || "null".equals(value) || "\"\\"".equals(value)) return;
+                String src = new org.json.JSONArray("[" + value + "]").optString(0, "");
+                if (src == null || src.trim().isEmpty()) return;
+                if (src.contains("script.googleusercontent.com") || src.contains("/macros/echo")) {
+                    webView.loadUrl(src);
+                }
+            } catch (Exception ignored) {
+            }
+        });
+    }
 
     private void applySystemBarInsets(View root) {
         getWindow().setStatusBarColor(Color.rgb(57, 168, 68));
