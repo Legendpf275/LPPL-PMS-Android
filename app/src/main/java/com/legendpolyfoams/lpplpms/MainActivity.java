@@ -166,6 +166,7 @@ public class MainActivity extends Activity {
             public void onPageFinished(WebView view, String url) {
                 progress.setVisibility(View.GONE);
                 CookieManager.getInstance().flush();
+                hideAppsScriptWarningBanner();
                 installBlobDownloadBridge();
             }
 
@@ -232,6 +233,31 @@ public class MainActivity extends Activity {
                 }
             }
         });
+    }
+
+    private void hideAppsScriptWarningBanner() {
+        String js =
+                "(function(){" +
+                "try{" +
+                "var style=document.getElementById('lppl-native-clean-style');" +
+                "if(!style){" +
+                "style=document.createElement('style');" +
+                "style.id='lppl-native-clean-style';" +
+                "style.textContent='#warning{display:none!important;height:0!important;min-height:0!important;margin:0!important;padding:0!important;overflow:hidden!important;}';" +
+                "(document.head||document.documentElement).appendChild(style);" +
+                "}" +
+                "var hide=function(){" +
+                "var w=document.getElementById('warning');" +
+                "if(w){w.style.setProperty('display','none','important');w.style.setProperty('height','0','important');}" +
+                "};" +
+                "hide();" +
+                "if(!window.__lpplWarningObserver){" +
+                "window.__lpplWarningObserver=new MutationObserver(hide);" +
+                "window.__lpplWarningObserver.observe(document.documentElement,{childList:true,subtree:true});" +
+                "}" +
+                "}catch(e){}" +
+                "})();";
+        webView.evaluateJavascript(js, null);
     }
 
     private void installBlobDownloadBridge() {
