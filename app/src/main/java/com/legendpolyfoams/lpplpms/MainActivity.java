@@ -263,7 +263,7 @@ public class MainActivity extends Activity {
 
         webView.evaluateJavascript(js, value -> {
             try {
-                if (value == null || "null".equals(value) || "\"\\"".equals(value)) return;
+                if (value == null || "null".equals(value) || "\"\"".equals(value)) return;
                 String src = new org.json.JSONArray("[" + value + "]").optString(0, "");
                 if (src == null || src.trim().isEmpty()) return;
                 if (src.contains("script.googleusercontent.com") || src.contains("/macros/echo")) {
