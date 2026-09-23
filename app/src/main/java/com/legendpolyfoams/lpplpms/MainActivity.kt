@@ -127,7 +127,8 @@ private fun LoginScreen(busy:Boolean,error:String,onLogin:(String,String)->Unit)
                     if(busy) CircularProgressIndicator(Modifier.size(20.dp),strokeWidth=2.dp,color=Color.White) else Text("Log in",fontWeight=FontWeight.Bold)
                 }
                 Spacer(Modifier.height(14.dp))
-                Text("Only active LPPL employees can enter this portal.",fontSize=11.sp,color=TextMuted)\n                Text("Native build 1.0.1",fontSize=10.sp,color=Color(0xFF9AA29B))
+                Text("Only active LPPL employees can enter this portal.",fontSize=11.sp,color=TextMuted)
+                Text("Native build 1.0.1",fontSize=10.sp,color=Color(0xFF9AA29B))
             }
         }
     }
