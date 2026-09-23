@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -17,6 +18,8 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -98,11 +101,23 @@ private fun LoginScreen(busy:Boolean,error:String,onLogin:(String,String)->Unit)
     Box(Modifier.fillMaxSize().background(Color(0xFFF0F8F1)).padding(22.dp),contentAlignment=Alignment.Center){
         Card(shape=RoundedCornerShape(22.dp),colors=CardDefaults.cardColors(containerColor=Color.White),elevation=CardDefaults.cardElevation(3.dp)){
             Column(Modifier.padding(22.dp),horizontalAlignment=Alignment.CenterHorizontally){
-                Box(Modifier.size(72.dp).background(LpplGreen,CircleShape),contentAlignment=Alignment.Center){
-                    Text("LPPL",color=Color.White,fontWeight=FontWeight.Black,fontSize=20.sp)
+                Surface(
+                    modifier=Modifier.width(180.dp).height(88.dp),
+                    shape=RoundedCornerShape(14.dp),
+                    color=Color.White,
+                    border=androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE1E7E2))
+                ){
+                    Box(Modifier.fillMaxSize().padding(8.dp),contentAlignment=Alignment.Center){
+                        Image(
+                            painter=painterResource(id=R.drawable.lppl_pms_icon),
+                            contentDescription="LPPL PMS",
+                            modifier=Modifier.fillMaxSize(),
+                            contentScale=ContentScale.Fit
+                        )
+                    }
                 }
-                Spacer(Modifier.height(14.dp))
-                Text("LPPL PMS",fontWeight=FontWeight.Black,fontSize=26.sp,color=LpplDark)
+                Spacer(Modifier.height(12.dp))
+                Text("LPPL PMS",fontWeight=FontWeight.Black,fontSize=25.sp,color=LpplDark)
                 Text("Process Management System",fontSize=13.sp,color=TextMuted)
                 Spacer(Modifier.height(22.dp))
                 OutlinedTextField(value=id,onValueChange={id=it},label={Text("Employee ID")},singleLine=true,modifier=Modifier.fillMaxWidth())
