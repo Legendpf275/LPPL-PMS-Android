@@ -5,8 +5,8 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <application
         android:allowBackup="false"
-        android:icon="@mipmap/ic_launcher"
-        android:roundIcon="@mipmap/ic_launcher_round"
+        android:icon="@drawable/lppl_pms_icon_safe"
+        android:roundIcon="@drawable/lppl_pms_icon_safe"
         android:label="LPPL PMS"
         android:theme="@style/Theme.LPPLPMS">
         <activity

@@ -102,18 +102,16 @@ private fun LoginScreen(busy:Boolean,error:String,onLogin:(String,String)->Unit)
         Card(shape=RoundedCornerShape(22.dp),colors=CardDefaults.cardColors(containerColor=Color.White),elevation=CardDefaults.cardElevation(3.dp)){
             Column(Modifier.padding(22.dp),horizontalAlignment=Alignment.CenterHorizontally){
                 Surface(
-                    modifier=Modifier.width(180.dp).height(88.dp),
-                    shape=RoundedCornerShape(14.dp),
+                    modifier=Modifier.width(190.dp).height(78.dp),
+                    shape=RoundedCornerShape(12.dp),
                     color=Color.White,
-                    border=androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE1E7E2))
+                    border=androidx.compose.foundation.BorderStroke(2.dp, LpplGreen)
                 ){
-                    Box(Modifier.fillMaxSize().padding(8.dp),contentAlignment=Alignment.Center){
-                        Image(
-                            painter=painterResource(id=R.drawable.lppl_pms_icon),
-                            contentDescription="LPPL PMS",
-                            modifier=Modifier.fillMaxSize(),
-                            contentScale=ContentScale.Fit
-                        )
+                    Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){
+                        Column(horizontalAlignment=Alignment.CenterHorizontally){
+                            Text("LPPL",fontWeight=FontWeight.Black,fontSize=26.sp,color=LpplGreen)
+                            Text("PMS",fontWeight=FontWeight.ExtraBold,fontSize=15.sp,color=LpplDark)
+                        }
                     }
                 }
                 Spacer(Modifier.height(12.dp))
@@ -129,7 +127,7 @@ private fun LoginScreen(busy:Boolean,error:String,onLogin:(String,String)->Unit)
                     if(busy) CircularProgressIndicator(Modifier.size(20.dp),strokeWidth=2.dp,color=Color.White) else Text("Log in",fontWeight=FontWeight.Bold)
                 }
                 Spacer(Modifier.height(14.dp))
-                Text("Only active LPPL employees can enter this portal.",fontSize=11.sp,color=TextMuted)
+                Text("Only active LPPL employees can enter this portal.",fontSize=11.sp,color=TextMuted)\n                Text("Native build 1.0.1",fontSize=10.sp,color=Color(0xFF9AA29B))
             }
         }
     }
