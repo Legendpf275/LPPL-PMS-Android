@@ -53,7 +53,15 @@ object ApiClient {
         client.newCall(req).execute().use { res ->
             val text=res.body?.string().orEmpty()
             if(!res.isSuccessful) throw ApiException("Server error ${res.code}")
-            val obj=try{JsonParser.parseString(text).asJsonObject}catch(e:Exception){throw ApiException("PMS returned an invalid response")}
+            val obj=try{
+                JsonParser.parseString(text).asJsonObject
+            }catch(e:Exception){
+                val lower=text.lowercase()
+                if(lower.contains("<html") || lower.contains("<!doctype") || lower.contains("script function not found")) {
+                    throw ApiException("Mobile API is not active on the PMS deployment. Add/deploy Mobile_API.gs, then try again.")
+                }
+                throw ApiException("PMS returned an invalid response")
+            }
             if(!(obj.get("success")?.asBoolean ?: false)) throw ApiException(obj.get("error")?.asString ?: "Request failed")
             obj
         }
