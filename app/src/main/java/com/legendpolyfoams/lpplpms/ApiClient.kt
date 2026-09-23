@@ -1,0 +1,133 @@
+package com.legendpolyfoams.lpplpms
+
+import com.google.gson.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import java.util.concurrent.TimeUnit
+
+data class User(
+    val userId:String="", val employeeId:String="", val name:String="", val department:String="",
+    val designation:String="", val effectiveRole:String="Employee", val isManager:Boolean=false, val profilePhotoUrl:String=""
+)
+data class TaskItem(
+    val taskId:String="", val instanceId:String="", val title:String="", val category:String="", val department:String="",
+    val employeeName:String="", val employeeId:String="", val dueDate:String="", val frequency:String="", val status:String="Pending",
+    val proofRequired:Boolean=false, val canComplete:Boolean=true, val canTransfer:Boolean=false
+)
+data class TicketItem(
+    val ticketId:String="", val description:String="", val department:String="", val category:String="", val urgency:String="",
+    val status:String="", val raisedByName:String="", val raisedByEmployeeId:String="", val assignedToName:String="",
+    val createdOn:String="", val dueDate:String="", val isCreatedByMe:Boolean=false, val isAssignedToMe:Boolean=false, val isOverdue:Boolean=false
+)
+data class NotificationItem(val id:String="",val type:String="",val title:String="",val message:String="",val createdOn:String="",val isRead:Boolean=false)
+data class BootstrapData(
+    val user:User=User(), val canViewTeamTasks:Boolean=false, val canViewTeamTickets:Boolean=false,
+    val canManageTeamShifts:Boolean=false, val departments:List<String> = emptyList(), val ticketCategories:List<String> = emptyList(),
+    val priorities:List<String> = emptyList(), val unreadCount:Int=0
+)
+data class DashboardData(val raw:JsonObject=JsonObject())
+data class LoginResult(val token:String,val user:User)
+data class TaskResult(val tasks:List<TaskItem>, val counts:Map<String,Int> = emptyMap())
+data class TicketResult(val mine:List<TicketItem>,val team:List<TicketItem>,val canViewTeam:Boolean)
+
+class ApiException(message:String):Exception(message)
+
+object ApiClient {
+    private val gson=GsonBuilder().create()
+    private val client=OkHttpClient.Builder()
+        .connectTimeout(25,TimeUnit.SECONDS).readTimeout(35,TimeUnit.SECONDS).writeTimeout(35,TimeUnit.SECONDS)
+        .followRedirects(true).followSslRedirects(true).build()
+    private val media="text/plain; charset=utf-8".toMediaType()
+
+    private suspend fun call(action:String, token:String?=null, payload:JsonObject=JsonObject()):JsonObject = withContext(Dispatchers.IO){
+        val root=JsonObject().apply {
+            addProperty("action",action)
+            if(!token.isNullOrBlank()) addProperty("token",token)
+            payload.entrySet().forEach{add(it.key,it.value)}
+        }
+        val req=Request.Builder().url(BuildConfig.BASE_API_URL).post(gson.toJson(root).toRequestBody(media)).build()
+        client.newCall(req).execute().use { res ->
+            val text=res.body?.string().orEmpty()
+            if(!res.isSuccessful) throw ApiException("Server error ${res.code}")
+            val obj=try{JsonParser.parseString(text).asJsonObject}catch(e:Exception){throw ApiException("PMS returned an invalid response")}
+            if(!(obj.get("success")?.asBoolean ?: false)) throw ApiException(obj.get("error")?.asString ?: "Request failed")
+            obj
+        }
+    }
+
+    private fun jo(parent:JsonObject,key:String):JsonObject = parent.get(key)?.takeIf{it.isJsonObject}?.asJsonObject ?: JsonObject()
+    private fun s(o:JsonObject,k:String)=o.get(k)?.takeIf{!it.isJsonNull}?.asString ?: ""
+    private fun b(o:JsonObject,k:String)=o.get(k)?.takeIf{!it.isJsonNull}?.asBoolean ?: false
+    private fun i(o:JsonObject,k:String)=o.get(k)?.takeIf{!it.isJsonNull}?.asInt ?: 0
+    private fun arr(o:JsonObject,k:String):JsonArray=o.get(k)?.takeIf{it.isJsonArray}?.asJsonArray ?: JsonArray()
+
+    private fun parseUser(o:JsonObject)=User(s(o,"userId"),s(o,"employeeId"),s(o,"name"),s(o,"department"),s(o,"designation"),s(o,"effectiveRole").ifBlank{"Employee"},b(o,"isManager"),s(o,"profilePhotoUrl"))
+    private fun parseTask(o:JsonObject)=TaskItem(s(o,"taskId"),s(o,"instanceId"),s(o,"title"),s(o,"category"),s(o,"department"),s(o,"employeeName"),s(o,"employeeId"),s(o,"dueDate"),s(o,"frequency"),s(o,"status").ifBlank{"Pending"},b(o,"proofRequired"),b(o,"canComplete"),b(o,"canTransfer"))
+    private fun parseTicket(o:JsonObject)=TicketItem(s(o,"ticketId"),s(o,"description"),s(o,"department"),s(o,"category"),s(o,"urgency"),s(o,"status"),s(o,"raisedByName"),s(o,"raisedByEmployeeId"),s(o,"assignedToName"),s(o,"createdOn"),s(o,"dueDate"),b(o,"isCreatedByMe"),b(o,"isAssignedToMe"),b(o,"isOverdue"))
+
+    suspend fun login(employeeId:String,password:String):LoginResult{
+        val p=JsonObject().apply{
+            addProperty("employeeId",employeeId)
+            addProperty("password",password)
+            addProperty("userAgent","LPPL PMS Native Android")
+        }
+        val r=call("login",payload=p)
+        return LoginResult(s(r,"token"),parseUser(jo(r,"user")))
+    }
+
+    suspend fun bootstrap(token:String):BootstrapData{
+        val d=jo(call("bootstrap",token),"data")
+        return BootstrapData(
+            parseUser(jo(d,"user")),
+            b(d,"canViewTeamTasks"),b(d,"canViewTeamTickets"),b(d,"canManageTeamShifts"),
+            arr(d,"departments").map{it.asString},arr(d,"ticketCategories").map{it.asString},
+            arr(d,"priorities").map{it.asString},i(d,"unreadCount")
+        )
+    }
+
+    suspend fun dashboard(token:String):DashboardData=DashboardData(jo(call("dashboard",token),"data"))
+
+    suspend fun tasks(token:String,scope:String,tab:String):TaskResult{
+        val p=JsonObject().apply{addProperty("scope",scope);addProperty("tab",tab)}
+        val d=jo(call("get_tasks",token,p),"data")
+        val list=arr(d,"tasks").map{parseTask(it.asJsonObject)}
+        val counts=mutableMapOf<String,Int>()
+        d.get("counts")?.takeIf{it.isJsonObject}?.asJsonObject?.entrySet()?.forEach{counts[it.key]=it.value.asInt}
+        return TaskResult(list,counts)
+    }
+
+    suspend fun completeTask(token:String,instanceId:String,remark:String="",proofBase64:String?=null,proofFileName:String?=null,proofMime:String?=null){
+        val p=JsonObject().apply{
+            addProperty("instanceId",instanceId)
+            addProperty("remark",remark)
+            if(proofBase64!=null)addProperty("proofBase64",proofBase64)
+            if(proofFileName!=null)addProperty("proofFileName",proofFileName)
+            if(proofMime!=null)addProperty("proofMimeType",proofMime)
+        }
+        call("complete_task",token,p)
+    }
+
+    suspend fun tickets(token:String):TicketResult{
+        val d=jo(call("get_tickets",token),"data")
+        return TicketResult(
+            arr(d,"mine").map{parseTicket(it.asJsonObject)},
+            arr(d,"team").map{parseTicket(it.asJsonObject)},
+            b(d,"canViewTeam")
+        )
+    }
+
+    suspend fun notifications(token:String):List<NotificationItem>{
+        val d=jo(call("get_notifications",token),"data")
+        return arr(d,"rows").map{
+            val o=it.asJsonObject
+            NotificationItem(s(o,"id"),s(o,"type"),s(o,"title"),s(o,"message"),s(o,"createdOn"),b(o,"isRead"))
+        }
+    }
+
+    suspend fun markAllNotificationsRead(token:String){call("mark_all_notifications_read",token)}
+    suspend fun logout(token:String){runCatching{call("logout",token)}}
+}

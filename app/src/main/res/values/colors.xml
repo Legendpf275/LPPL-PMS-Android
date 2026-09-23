@@ -1,6 +1,1 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <color name="lppl_green">#39A844</color>
-    <color name="white">#FFFFFF</color>
-    <color name="black">#111111</color>
-</resources>
+<resources><color name="white">#FFFFFF</color><color name="lppl_green">#39A844</color></resources>

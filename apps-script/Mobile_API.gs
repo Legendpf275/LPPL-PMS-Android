@@ -1,0 +1,217 @@
+/**************************************************************
+ * Mobile_API.gs — LPPL PMS native Android JSON bridge
+ * Reuses existing LPPL PMS auth/session/business functions.
+ * SAME PMS_DATABASE. No second auth system. No second database.
+ **************************************************************/
+
+function doPost(e) {
+  try {
+    const body = e && e.postData && e.postData.contents ? JSON.parse(e.postData.contents) : {};
+    const action = String(body.action || '').trim();
+    if (!action) return mobileJson_({ success:false, error:'Missing action.' });
+
+    let out;
+    switch (action) {
+      case 'login': out = mobileLogin_(body); break;
+      case 'logout': out = mobileUnwrap_(api_logout(body.token)); break;
+      case 'bootstrap': out = mobileBootstrap_(body.token); break;
+      case 'dashboard': out = mobileData_(api_getDashboard(body.token, body.filters || {})); break;
+      case 'get_tasks': out = mobileTasks_(body); break;
+      case 'complete_task': out = mobileCompleteTask_(body); break;
+      case 'get_tickets': out = mobileTickets_(body.token); break;
+      case 'create_ticket': out = mobileCreateTicket_(body); break;
+      case 'ticket_messages': out = mobileData_(api_getTicketMessages(body.token, body.ticketId)); break;
+      case 'add_ticket_message': out = mobileData_(api_addTicketMessage(body.token, body.ticketId, body.message)); break;
+      case 'update_ticket_status': out = mobileData_(api_updateTicketStatus(body.token, body.ticketId, body.status)); break;
+      case 'get_notifications': out = mobileNotifications_(body.token); break;
+      case 'mark_all_notifications_read': out = mobileData_(api_markAllNotificationsRead(body.token)); break;
+      case 'get_shift_roster': out = mobileData_(api_getShiftRosterV46(body.token, body.filters || {})); break;
+      case 'save_shift_roster': out = mobileData_(api_saveShiftRosterV46(body.token, body.input || {})); break;
+      default: out = { success:false, error:'Unknown mobile action: ' + action };
+    }
+    return mobileJson_(out);
+  } catch (err) {
+    return mobileJson_({ success:false, error:String(err && err.message ? err.message : err) });
+  }
+}
+
+function mobileJson_(obj) {
+  return ContentService.createTextOutput(JSON.stringify(makeClientSafe_(obj)))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function mobileUnwrap_(safeResult) {
+  if (!safeResult || safeResult.ok === false) {
+    return { success:false, error:safeResult && safeResult.error ? safeResult.error : 'Request failed.' };
+  }
+  return { success:true, data:safeResult.data };
+}
+
+function mobileData_(safeResult) { return mobileUnwrap_(safeResult); }
+
+function mobileLogin_(body) {
+  const r = api_login(body.employeeId, body.password, body.userAgent || 'LPPL PMS Native Android');
+  if (!r || r.ok === false) return { success:false, error:r && r.error ? r.error : 'Login failed.' };
+  const d = r.data || {};
+  return { success:true, token:d.token, user:mobileUser_(d.me), expiresInDays:d.expiresInDays || 0 };
+}
+
+function mobileBootstrap_(token) {
+  const r = api_bootstrap(token);
+  if (!r || r.ok === false) return { success:false, error:r && r.error ? r.error : 'Unable to load PMS.' };
+  const d = r.data || {};
+  return { success:true, data:{
+    user:mobileUser_(d.me),
+    canViewTeamTasks:!!(d.permissions && d.permissions.canViewTeamTasks),
+    canViewTeamTickets:!!(d.permissions && d.permissions.canViewTeamTickets),
+    canManageTeamShifts:!!(d.permissions && d.permissions.canManageTeamShifts),
+    departments:(d.departments || []).map(x => String(x.DepartmentName || '')).filter(Boolean),
+    ticketCategories:d.ticketCategories || [],
+    taskCategories:d.taskCategories || [],
+    priorities:d.priorities || [],
+    unreadCount:Number(d.unreadNotificationCount || 0),
+    companyName:d.companyName || 'Legend Polyfoams Pvt. Ltd.',
+    appName:d.appName || APP_NAME,
+    version:d.version || APP_VERSION
+  }};
+}
+
+function mobileUser_(u) {
+  u = u || {};
+  const rawRole = normalizeRole_(u.Role || 'Employee');
+  const manager = String(u.IsManager || '').toLowerCase() === 'yes';
+  return {
+    userId:String(u.UserID || ''), employeeId:String(u.EmployeeID || ''), name:String(u.Name || ''),
+    department:String(u.Department || ''), designation:String(u.Designation || ''), rawRole:rawRole,
+    isManager:manager,
+    effectiveRole:rawRole === ROLES.ADMIN ? 'Admin' : (rawRole === ROLES.MD ? 'MD' : (manager ? 'Manager' : 'Employee')),
+    profilePhotoUrl:String(u.ProfilePhotoURL || '')
+  };
+}
+
+function mobileTasks_(body) {
+  const token = body.token;
+  const scope = String(body.scope || 'MY').toUpperCase();
+  const tab = normalizeTaskWorkspaceTabV43_(body.tab || 'today', true);
+  let r, rows, counts;
+
+  if (scope === 'TEAM') {
+    r = api_getTeamTaskWorkspaceV43(token, { tab:tab, page:1, pageSize:200 });
+    if (!r || r.ok === false) return { success:false, error:r && r.error ? r.error : 'Unable to load team tasks.' };
+    rows = (r.data && r.data.rows) || [];
+    counts = (r.data && r.data.counts) || {};
+  } else {
+    r = api_getMyTaskWorkspaceV43(token);
+    if (!r || r.ok === false) return { success:false, error:r && r.error ? r.error : 'Unable to load tasks.' };
+    rows = (r.data && r.data[tab]) || [];
+    counts = (r.data && r.data.counts) || {};
+  }
+
+  const masters = {};
+  sheetToObjects_(SHEET_NAMES.TASK_MASTER).forEach(m => masters[String(m.MasterID || '')] = m);
+  return { success:true, data:{ tasks:rows.map(row => mobileTask_(row, masters)), counts:counts } };
+}
+
+function mobileTask_(row, masterMap) {
+  row = row || {};
+  const master = (masterMap || {})[String(row.MasterID || '')] || {};
+  // One user-facing logical Task ID: prefer manually entered Task_Master.TaskID.
+  const logicalTaskId = String(master.TaskID || row.MasterTaskID || row.RecurringTaskID || master.RecurringTaskID || row.MasterID || '');
+  const userId = String(row.EmployeeUserID || row.AssignedToUserID || '');
+  const emp = userId ? getUserById_(userId) : null;
+  return {
+    taskId:logicalTaskId,
+    instanceId:String(row.TaskID || ''),
+    title:String(row.TaskDescription || ''),
+    category:String(row.Category || master.Category || ''),
+    department:String(row.Department || (emp && emp.Department) || master.Department || ''),
+    employeeName:String(row.EmployeeName || (emp && emp.Name) || ''),
+    employeeId:String(row.EmployeeID || (emp && emp.EmployeeID) || ''),
+    dueDate:row.DueDate || '',
+    frequency:String(row.Frequency || master.Frequency || ''),
+    status:String(row.Status || 'Pending'),
+    proofRequired:String(row.ProofRequired || 'No') === 'Yes',
+    canComplete:row.CanComplete !== false,
+    canTransfer:!!row.IsTransferable
+  };
+}
+
+function mobileCompleteTask_(body) {
+  let fileData = null;
+  if (body.proofBase64) {
+    fileData = {
+      base64:String(body.proofBase64),
+      fileName:String(body.proofFileName || 'task_proof.jpg'),
+      mimeType:String(body.proofMimeType || 'image/jpeg')
+    };
+  }
+  const r = api_completeTask(body.token, String(body.instanceId || ''), String(body.remark || ''), fileData);
+  if (!r || r.ok === false) return { success:false, error:r && r.error ? r.error : 'Unable to complete task.' };
+  return { success:true, data:{ completed:true, stayOnTab:'today' } };
+}
+
+function mobileTickets_(token) {
+  const r = api_getMyTickets(token);
+  if (!r || r.ok === false) return { success:false, error:r && r.error ? r.error : 'Unable to load help tickets.' };
+  const d = r.data || {};
+  return { success:true, data:{
+    mine:(d.mine || []).map(mobileTicket_),
+    team:(d.team || []).map(mobileTicket_),
+    canViewTeam:!!d.canViewTeam,
+    ticketUsers:d.ticketUsers || []
+  }};
+}
+
+function mobileTicket_(t) {
+  t = t || {};
+  return {
+    ticketId:String(t.TicketID || ''),
+    description:String(t.Description || ''),
+    department:String(t.Department || ''),
+    category:String(t.Category || ''),
+    urgency:String(t.Priority || ''),
+    status:String(t.Status || ''),
+    raisedByName:String(t.CreatedByName || ''),
+    raisedByEmployeeId:String(t.CreatedByEmployeeID || ''),
+    assignedToName:String(t.AssignedToName || ''),
+    createdOn:t.CreatedOn || '',
+    dueDate:t.DueDate || '',
+    isCreatedByMe:!!t.IsCreatedByMe,
+    isAssignedToMe:!!t.IsAssignedToMe,
+    isOverdue:!!t.IsOverdue
+  };
+}
+
+function mobileCreateTicket_(body) {
+  const ticket = body.ticket || {};
+  const photo = body.photoBase64 ? {
+    base64:String(body.photoBase64),
+    fileName:String(body.photoFileName || 'ticket_attachment.jpg'),
+    mimeType:String(body.photoMimeType || 'image/jpeg')
+  } : null;
+  const voice = body.voiceBase64 ? {
+    base64:String(body.voiceBase64),
+    fileName:String(body.voiceFileName || 'voice_note.m4a'),
+    mimeType:String(body.voiceMimeType || 'audio/mp4')
+  } : null;
+  const r = api_createTicket(body.token, ticket, photo, voice);
+  if (!r || r.ok === false) return { success:false, error:r && r.error ? r.error : 'Unable to create ticket.' };
+  return { success:true, data:{ ticketId:r.data } };
+}
+
+function mobileNotifications_(token) {
+  const r = api_getNotifications(token, 50);
+  if (!r || r.ok === false) return { success:false, error:r && r.error ? r.error : 'Unable to load notifications.' };
+  const d = r.data || {};
+  return { success:true, data:{
+    unreadCount:Number(d.unreadCount || 0),
+    rows:(d.rows || []).map(n => ({
+      id:String(n.NotificationID || ''),
+      type:String(n.Type || ''),
+      title:String(n.Title || ''),
+      message:String(n.Message || ''),
+      createdOn:n.CreatedOn || '',
+      isRead:String(n.IsRead || '').toLowerCase() === 'yes'
+    }))
+  }};
+}
