@@ -33,11 +33,21 @@ data class DashboardData(val raw:JsonObject=JsonObject())
 data class LoginResult(val token:String,val user:User)
 data class TaskResult(val tasks:List<TaskItem>, val counts:Map<String,Int> = emptyMap())
 data class TicketResult(val mine:List<TicketItem>,val team:List<TicketItem>,val canViewTeam:Boolean)
+data class ShiftRow(
+    val rosterId:String="", val userId:String="", val employeeId:String="", val employeeName:String="",
+    val department:String="", val designation:String="", val shiftCode:String="", val shiftName:String="",
+    val shiftType:String="", val startTime:String="", val endTime:String="", val effectiveFrom:String="", val effectiveTo:String=""
+)
+data class ShiftResult(val rows:List<ShiftRow> = emptyList())
 
 class ApiException(message:String):Exception(message)
 
 object ApiClient {
     private val gson=GsonBuilder().create()
+    private data class CacheEntry<T>(val at:Long,val value:T)
+    private val taskCache=mutableMapOf<String,CacheEntry<TaskResult>>()
+    private var ticketCache:CacheEntry<TicketResult>?=null
+    private const val CACHE_MS=120000L
     private val client=OkHttpClient.Builder()
         .connectTimeout(25,TimeUnit.SECONDS).readTimeout(35,TimeUnit.SECONDS).writeTimeout(35,TimeUnit.SECONDS)
         .followRedirects(true).followSslRedirects(true).build()
@@ -76,6 +86,11 @@ object ApiClient {
     private fun parseUser(o:JsonObject)=User(s(o,"userId"),s(o,"employeeId"),s(o,"name"),s(o,"department"),s(o,"designation"),s(o,"effectiveRole").ifBlank{"Employee"},b(o,"isManager"),s(o,"profilePhotoUrl"))
     private fun parseTask(o:JsonObject)=TaskItem(s(o,"taskId"),s(o,"instanceId"),s(o,"title"),s(o,"category"),s(o,"department"),s(o,"employeeName"),s(o,"employeeId"),s(o,"dueDate"),s(o,"frequency"),s(o,"status").ifBlank{"Pending"},b(o,"proofRequired"),b(o,"canComplete"),b(o,"canTransfer"))
     private fun parseTicket(o:JsonObject)=TicketItem(s(o,"ticketId"),s(o,"description"),s(o,"department"),s(o,"category"),s(o,"urgency"),s(o,"status"),s(o,"raisedByName"),s(o,"raisedByEmployeeId"),s(o,"assignedToName"),s(o,"createdOn"),s(o,"dueDate"),b(o,"isCreatedByMe"),b(o,"isAssignedToMe"),b(o,"isOverdue"))
+    private fun parseShift(o:JsonObject)=ShiftRow(
+        s(o,"RosterID"),s(o,"UserID"),s(o,"EmployeeID"),s(o,"EmployeeName"),
+        s(o,"Department"),s(o,"Designation"),s(o,"ShiftCode"),s(o,"ShiftName"),
+        s(o,"ShiftType"),s(o,"StartTime"),s(o,"EndTime"),s(o,"EffectiveFrom"),s(o,"EffectiveTo")
+    )
 
     suspend fun login(employeeId:String,password:String):LoginResult{
         val p=JsonObject().apply{
@@ -99,13 +114,20 @@ object ApiClient {
 
     suspend fun dashboard(token:String):DashboardData=DashboardData(jo(call("dashboard",token),"data"))
 
-    suspend fun tasks(token:String,scope:String,tab:String):TaskResult{
+    suspend fun tasks(token:String,scope:String,tab:String,force:Boolean=false):TaskResult{
+        val key="$token|$scope|$tab"
+        val now=System.currentTimeMillis()
+        if(!force) taskCache[key]?.takeIf{now-it.at<CACHE_MS}?.let{return it.value}
         val p=JsonObject().apply{addProperty("scope",scope);addProperty("tab",tab)}
         val d=jo(call("get_tasks",token,p),"data")
         val list=arr(d,"tasks").map{parseTask(it.asJsonObject)}
         val counts=mutableMapOf<String,Int>()
         d.get("counts")?.takeIf{it.isJsonObject}?.asJsonObject?.entrySet()?.forEach{counts[it.key]=it.value.asInt}
-        return TaskResult(list,counts)
+        return TaskResult(list,counts).also{taskCache[key]=CacheEntry(now,it)}
+    }
+
+    suspend fun prefetchTodayTasks(token:String){
+        runCatching{tasks(token,"MY","today")}
     }
 
     suspend fun completeTask(token:String,instanceId:String,remark:String="",proofBase64:String?=null,proofFileName:String?=null,proofMime:String?=null){
@@ -117,15 +139,23 @@ object ApiClient {
             if(proofMime!=null)addProperty("proofMimeType",proofMime)
         }
         call("complete_task",token,p)
+        taskCache.keys.filter{it.startsWith("$token|")}.forEach{taskCache.remove(it)}
     }
 
-    suspend fun tickets(token:String):TicketResult{
+    suspend fun tickets(token:String,force:Boolean=false):TicketResult{
+        val now=System.currentTimeMillis()
+        if(!force) ticketCache?.takeIf{now-it.at<CACHE_MS}?.let{return it.value}
         val d=jo(call("get_tickets",token),"data")
         return TicketResult(
             arr(d,"mine").map{parseTicket(it.asJsonObject)},
             arr(d,"team").map{parseTicket(it.asJsonObject)},
             b(d,"canViewTeam")
-        )
+        ).also{ticketCache=CacheEntry(now,it)}
+    }
+
+    suspend fun shiftRoster(token:String):ShiftResult{
+        val d=jo(call("get_shift_roster",token),"data")
+        return ShiftResult(arr(d,"rows").map{parseShift(it.asJsonObject)})
     }
 
     suspend fun notifications(token:String):List<NotificationItem>{
@@ -137,5 +167,8 @@ object ApiClient {
     }
 
     suspend fun markAllNotificationsRead(token:String){call("mark_all_notifications_read",token)}
-    suspend fun logout(token:String){runCatching{call("logout",token)}}
+    suspend fun logout(token:String){
+        taskCache.clear(); ticketCache=null
+        runCatching{call("logout",token)}
+    }
 }
