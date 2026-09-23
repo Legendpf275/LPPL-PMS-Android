@@ -98,38 +98,150 @@ private fun LoadingScreen(error:String){
 private fun LoginScreen(busy:Boolean,error:String,onLogin:(String,String)->Unit){
     var id by remember{mutableStateOf("")}
     var pw by remember{mutableStateOf("")}
-    Box(Modifier.fillMaxSize().background(Color(0xFFF0F8F1)).padding(22.dp),contentAlignment=Alignment.Center){
-        Card(shape=RoundedCornerShape(22.dp),colors=CardDefaults.cardColors(containerColor=Color.White),elevation=CardDefaults.cardElevation(3.dp)){
-            Column(Modifier.padding(22.dp),horizontalAlignment=Alignment.CenterHorizontally){
-                Surface(
-                    modifier=Modifier.width(190.dp).height(78.dp),
-                    shape=RoundedCornerShape(12.dp),
-                    color=Color.White,
-                    border=androidx.compose.foundation.BorderStroke(2.dp, LpplGreen)
-                ){
-                    Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){
-                        Column(horizontalAlignment=Alignment.CenterHorizontally){
-                            Text("LPPL",fontWeight=FontWeight.Black,fontSize=26.sp,color=LpplGreen)
-                            Text("PMS",fontWeight=FontWeight.ExtraBold,fontSize=15.sp,color=LpplDark)
+    var keepSignedIn by remember{mutableStateOf(true)}
+    var showPassword by remember{mutableStateOf(false)}
+
+    Box(
+        Modifier.fillMaxSize()
+            .background(Color(0xFF07111F))
+            .padding(horizontal=24.dp, vertical=28.dp),
+        contentAlignment=Alignment.Center
+    ){
+        Column(
+            modifier=Modifier.fillMaxWidth(),
+            horizontalAlignment=Alignment.CenterHorizontally
+        ){
+            Surface(
+                modifier=Modifier.size(58.dp),
+                shape=RoundedCornerShape(12.dp),
+                color=LpplGreen
+            ){
+                Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){
+                    Column(horizontalAlignment=Alignment.CenterHorizontally){
+                        Text("LPPL",fontWeight=FontWeight.Black,fontSize=17.sp,color=Color.White)
+                        Text("PMS",fontWeight=FontWeight.Bold,fontSize=10.sp,color=Color.White)
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(18.dp))
+            Text("LPPL PMS",fontWeight=FontWeight.Black,fontSize=28.sp,color=Color.White)
+            Spacer(Modifier.height(5.dp))
+            Text("Legend Polyfoams Pvt. Ltd.",fontSize=13.sp,color=Color(0xFF93A4BA))
+            Text("Process Management System",fontSize=13.sp,color=Color(0xFF93A4BA))
+            Spacer(Modifier.height(26.dp))
+
+            Card(
+                modifier=Modifier.fillMaxWidth(),
+                shape=RoundedCornerShape(16.dp),
+                colors=CardDefaults.cardColors(containerColor=Color(0xFF172231)),
+                elevation=CardDefaults.cardElevation(defaultElevation=8.dp)
+            ){
+                Column(Modifier.padding(18.dp)){
+                    Text("EMPLOYEE ID",fontWeight=FontWeight.Bold,fontSize=11.sp,color=Color(0xFFC4CFDC))
+                    Spacer(Modifier.height(7.dp))
+                    OutlinedTextField(
+                        value=id,
+                        onValueChange={id=it},
+                        placeholder={Text("Enter your Employee ID",color=Color(0xFF7D8B9D))},
+                        leadingIcon={Icon(Icons.Default.Badge,null,tint=Color(0xFF91A1B5))},
+                        singleLine=true,
+                        modifier=Modifier.fillMaxWidth(),
+                        colors=OutlinedTextFieldDefaults.colors(
+                            focusedTextColor=Color.White,
+                            unfocusedTextColor=Color.White,
+                            focusedBorderColor=LpplGreen,
+                            unfocusedBorderColor=Color(0xFF344257),
+                            cursorColor=LpplGreen,
+                            focusedContainerColor=Color(0xFF111B28),
+                            unfocusedContainerColor=Color(0xFF111B28)
+                        ),
+                        shape=RoundedCornerShape(10.dp)
+                    )
+
+                    Spacer(Modifier.height(16.dp))
+                    Text("PASSWORD",fontWeight=FontWeight.Bold,fontSize=11.sp,color=Color(0xFFC4CFDC))
+                    Spacer(Modifier.height(7.dp))
+                    OutlinedTextField(
+                        value=pw,
+                        onValueChange={pw=it},
+                        placeholder={Text("Enter your password",color=Color(0xFF7D8B9D))},
+                        leadingIcon={Icon(Icons.Default.Lock,null,tint=Color(0xFF91A1B5))},
+                        trailingIcon={
+                            IconButton(onClick={showPassword=!showPassword}){
+                                Icon(
+                                    if(showPassword) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                    "Show password",
+                                    tint=Color(0xFF91A1B5)
+                                )
+                            }
+                        },
+                        visualTransformation=if(showPassword) androidx.compose.ui.text.input.VisualTransformation.None else PasswordVisualTransformation(),
+                        singleLine=true,
+                        modifier=Modifier.fillMaxWidth(),
+                        colors=OutlinedTextFieldDefaults.colors(
+                            focusedTextColor=Color.White,
+                            unfocusedTextColor=Color.White,
+                            focusedBorderColor=LpplGreen,
+                            unfocusedBorderColor=Color(0xFF344257),
+                            cursorColor=LpplGreen,
+                            focusedContainerColor=Color(0xFF111B28),
+                            unfocusedContainerColor=Color(0xFF111B28)
+                        ),
+                        shape=RoundedCornerShape(10.dp)
+                    )
+
+                    Row(
+                        Modifier.fillMaxWidth().padding(top=6.dp),
+                        verticalAlignment=Alignment.CenterVertically,
+                        horizontalArrangement=Arrangement.SpaceBetween
+                    ){
+                        Row(verticalAlignment=Alignment.CenterVertically){
+                            Checkbox(
+                                checked=keepSignedIn,
+                                onCheckedChange={keepSignedIn=it},
+                                colors=CheckboxDefaults.colors(checkedColor=LpplGreen)
+                            )
+                            Text("Keep me signed in",fontSize=12.sp,color=Color(0xFFB7C3D1))
+                        }
+                        Text("Forgot password?",fontSize=12.sp,color=Color(0xFF65E783),fontWeight=FontWeight.SemiBold)
+                    }
+
+                    if(error.isNotBlank()){
+                        Spacer(Modifier.height(6.dp))
+                        Text(error,color=Color(0xFFFF7B7B),fontSize=12.sp)
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+                    Button(
+                        onClick={onLogin(id,pw)},
+                        enabled=!busy && id.isNotBlank() && pw.isNotBlank(),
+                        modifier=Modifier.fillMaxWidth().height(52.dp),
+                        shape=RoundedCornerShape(10.dp),
+                        colors=ButtonDefaults.buttonColors(
+                            containerColor=Color(0xFF40D064),
+                            disabledContainerColor=Color(0xFF2E6541)
+                        )
+                    ){
+                        if(busy){
+                            CircularProgressIndicator(Modifier.size(20.dp),strokeWidth=2.dp,color=Color.White)
+                        }else{
+                            Text("Sign in to PMS",fontWeight=FontWeight.Black,color=Color(0xFF07111F))
+                            Spacer(Modifier.width(8.dp))
+                            Icon(Icons.Default.ArrowForward,null,tint=Color(0xFF07111F),modifier=Modifier.size(18.dp))
                         }
                     }
                 }
-                Spacer(Modifier.height(12.dp))
-                Text("LPPL PMS",fontWeight=FontWeight.Black,fontSize=25.sp,color=LpplDark)
-                Text("Process Management System",fontSize=13.sp,color=TextMuted)
-                Spacer(Modifier.height(22.dp))
-                OutlinedTextField(value=id,onValueChange={id=it},label={Text("Employee ID")},singleLine=true,modifier=Modifier.fillMaxWidth())
-                Spacer(Modifier.height(10.dp))
-                OutlinedTextField(value=pw,onValueChange={pw=it},label={Text("Password")},visualTransformation=PasswordVisualTransformation(),singleLine=true,modifier=Modifier.fillMaxWidth())
-                if(error.isNotBlank()){Spacer(Modifier.height(8.dp));Text(error,color=Color(0xFFC62828),fontSize=12.sp)}
-                Spacer(Modifier.height(16.dp))
-                Button(onClick={onLogin(id,pw)},enabled=!busy && id.isNotBlank() && pw.isNotBlank(),modifier=Modifier.fillMaxWidth().height(48.dp),shape=RoundedCornerShape(12.dp)){
-                    if(busy) CircularProgressIndicator(Modifier.size(20.dp),strokeWidth=2.dp,color=Color.White) else Text("Log in",fontWeight=FontWeight.Bold)
-                }
-                Spacer(Modifier.height(14.dp))
-                Text("Only active LPPL employees can enter this portal.",fontSize=11.sp,color=TextMuted)
-                Text("Native build 1.0.1",fontSize=10.sp,color=Color(0xFF9AA29B))
             }
+
+            Spacer(Modifier.height(22.dp))
+            Row(verticalAlignment=Alignment.CenterVertically){
+                Icon(Icons.Default.Shield,null,tint=Color(0xFF728196),modifier=Modifier.size(14.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Secure login • LPPL authorized users only",fontSize=11.sp,color=Color(0xFF728196))
+            }
+            Spacer(Modifier.height(10.dp))
+            Text("LPPL PMS v1.0.1",fontSize=10.sp,color=Color(0xFF55657A))
         }
     }
 }
