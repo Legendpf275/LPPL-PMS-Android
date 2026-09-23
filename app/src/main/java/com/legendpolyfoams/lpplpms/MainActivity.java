@@ -274,34 +274,6 @@ public class MainActivity extends Activity {
         });
     }
 
-    private void enterAppsScriptInnerAppIfNeeded(String url) {
-        if (url == null || !url.contains("script.google.com")) return;
-
-        String js =
-                "(function(){" +
-                "try{" +
-                "var frames=document.querySelectorAll('iframe');" +
-                "for(var i=0;i<frames.length;i++){" +
-                "var s=frames[i].src||'';" +
-                "if(s.indexOf('script.googleusercontent.com')>=0||s.indexOf('/macros/echo')>=0)return s;" +
-                "}" +
-                "return '';" +
-                "}catch(e){return '';}" +
-                "})();";
-
-        webView.evaluateJavascript(js, value -> {
-            try {
-                if (value == null || "null".equals(value) || "\"\"".equals(value)) return;
-                String src = new org.json.JSONArray("[" + value + "]").optString(0, "");
-                if (src == null || src.trim().isEmpty()) return;
-                if (src.contains("script.googleusercontent.com") || src.contains("/macros/echo")) {
-                    webView.loadUrl(src);
-                }
-            } catch (Exception ignored) {
-            }
-        });
-    }
-
     private void applySystemBarInsets(View root) {
         getWindow().setStatusBarColor(Color.rgb(57, 168, 68));
         getWindow().setNavigationBarColor(Color.WHITE);
@@ -365,11 +337,22 @@ public class MainActivity extends Activity {
                 "}" +
                 "return out;" +
                 "}" +
+                "function goToday(){" +
+                "var els=document.querySelectorAll('button,a,[role=button],[onclick]');" +
+                "for(var i=0;i<els.length;i++){var t=norm(els[i].innerText).toLowerCase();if(t==='today'||t.indexOf('today ')===0){try{els[i].click();return true;}catch(e){}}}" +
+                "return false;" +
+                "}" +
+                "function scheduleReturnToday(){" +
+                "try{sessionStorage.setItem('lpplReturnToToday','1');}catch(e){}" +
+                "setTimeout(goToday,450);setTimeout(goToday,1000);setTimeout(goToday,1800);" +
+                "}" +
                 "function clickProxy(original,label){" +
                 "var b=document.createElement('button');b.textContent=label;b.type='button';" +
-                "if((label||'').toLowerCase().indexOf('done')>=0){b.style.background='#39a844';b.style.color='#fff';b.style.border='1px solid #39a844';}" +
+                "var lower=(label||'').toLowerCase();" +
+                "var isDone=(lower==='mark done'||lower==='done'||lower.indexOf('mark done')>=0);" +
+                "if(isDone){b.style.background='#39a844';b.style.color='#fff';b.style.border='1px solid #39a844';}" +
                 "else{b.style.background='#fff';b.style.color='#238636';b.style.border='1px solid #d1d5db';}" +
-                "b.onclick=function(){try{original.click();}catch(x){}};return b;" +
+                "b.onclick=function(){try{if(isDone)scheduleReturnToday();original.click();}catch(x){}};return b;" +
                 "}" +
                 "function compactTask(card){" +
                 "if(card.dataset.lpplCompact==='task')return;" +
@@ -417,10 +400,15 @@ public class MainActivity extends Activity {
                 "best.parentNode.insertBefore(b,best);" +
                 "}" +
                 "function decorateSegments(){" +                "var els=document.querySelectorAll('button,a,[role=button]');var found=[];" +                "for(var i=0;i<els.length;i++){var t=norm(els[i].innerText).toLowerCase();if(t==='my tasks'||t==='team tasks'||t==='my help tickets'||t==='team help tickets'||t==='my'||t==='team'){found.push(els[i]);}}" +                "for(var j=0;j<found.length;j++){found[j].classList.add('lppl-native-seg');var p=found[j].parentElement;if(p&&p.children.length<=4)p.classList.add('lppl-native-seg-wrap');}" +                "}" +                "function floatingNewTicket(){" +                "if(document.querySelector('.lppl-native-fab'))return;var els=document.querySelectorAll('button,a');" +                "for(var i=0;i<els.length;i++){var t=norm(els[i].innerText).toLowerCase();if(t==='+ new ticket'||t==='new ticket'||t==='create ticket'||t==='+ create ticket'){var b=document.createElement('button');b.className='lppl-native-fab';b.textContent='+ New Ticket';b.onclick=(function(src){return function(){try{src.click();}catch(e){}};})(els[i]);document.body.appendChild(b);break;}}" +                "}" +
+                "function enforceTodayAfterDone(){" +
+                "var pending=false;try{pending=sessionStorage.getItem('lpplReturnToToday')==='1';}catch(e){}" +
+                "if(!pending)return;" +
+                "if(goToday()){try{sessionStorage.removeItem('lpplReturnToToday');}catch(e){}}" +
+                "}" +
                 "function enhance(){" +
                 "var taskCards=smallestCard(['RECURRING ID','TASK DESCRIPTION','TASK DATE','STATUS / RESULT']);for(var i=0;i<taskCards.length;i++)compactTask(taskCards[i]);" +
                 "var ticketCards=smallestCard(['TICKET ID','CREATED / DUE','DESCRIPTION','DEPARTMENT / CATEGORY','STATUS']);for(var j=0;j<ticketCards.length;j++)compactTicket(ticketCards[j]);" +
-                "collapseFilters();decorateSegments();floatingNewTicket();" +
+                "collapseFilters();decorateSegments();floatingNewTicket();enforceTodayAfterDone();" +
                 "}" +
                 "enhance();" +
                 "if(!window.__lpplCompactTimer){window.__lpplCompactTimer=setInterval(enhance,1200);}" +
