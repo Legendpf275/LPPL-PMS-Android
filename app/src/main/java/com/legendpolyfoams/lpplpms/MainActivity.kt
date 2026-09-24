@@ -379,6 +379,8 @@ private fun DashboardScreen(token:String,boot:BootstrapData,onTasks:()->Unit,onS
     val onLeave=if(personal) counts?.get("onLeave")?.asInt?:0 else cards?.get("onLeave")?.asInt?:0
     val openTickets=if(personal) counts?.get("openTickets")?.asInt?:0 else cards?.get("openTickets")?.asInt?:0
     val completion=if(personal) raw?.get("completionRate")?.asInt?:0 else cards?.get("completionRate")?.asInt?:0
+    val greetingName=boot.user.name.ifBlank { "Employee" }
+    val greetingDepartment=boot.user.department.ifBlank { "LPPL" }
 
     LazyColumn(
         Modifier.fillMaxSize().background(Color(0xFFF7FAF8)).padding(horizontal=16.dp,vertical=14.dp),
@@ -398,9 +400,9 @@ private fun DashboardScreen(token:String,boot:BootstrapData,onTasks:()->Unit,onS
                             Text(dateText,fontSize=10.sp,color=Color(0xFF00855A),fontWeight=FontWeight.Bold)
                         }
                         Spacer(Modifier.height(6.dp))
-                        Text("Hello, ${boot.user.name.ifBlank{"Employee"}}",fontSize=16.sp,fontWeight=FontWeight.Black,color=Color(0xFF07111F))
+                        Text("Hello, $greetingName",fontSize=16.sp,fontWeight=FontWeight.Black,color=Color(0xFF07111F))
                         Spacer(Modifier.height(2.dp))
-                        Text("${boot.user.department.ifBlank{"LPPL"}} • ${boot.user.effectiveRole}",fontSize=10.sp,color=Color(0xFF557085))
+                        Text("$greetingDepartment • ${boot.user.effectiveRole}",fontSize=10.sp,color=Color(0xFF557085))
                     }
                     Surface(shape=RoundedCornerShape(13.dp),color=Color(0xFFE9FFF1),border=androidx.compose.foundation.BorderStroke(1.dp,Color(0xFF82E9A9))){
                         Column(Modifier.padding(horizontal=13.dp,vertical=9.dp),horizontalAlignment=Alignment.CenterHorizontally){
