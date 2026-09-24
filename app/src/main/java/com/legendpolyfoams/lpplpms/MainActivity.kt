@@ -709,40 +709,82 @@ private fun TicketsScreen(token:String,boot:BootstrapData){
     var data by remember{mutableStateOf<TicketResult?>(null)}
     var status by remember{mutableStateOf("ALL")}
     var filtersOpen by remember{mutableStateOf(false)}
+    var department by remember{mutableStateOf("ALL")}
+    var category by remember{mutableStateOf("ALL")}
+    var urgency by remember{mutableStateOf("ALL")}
     var err by remember{mutableStateOf("")}
+
     LaunchedEffect(Unit){
         runCatching{ApiClient.tickets(token)}.onSuccess{data=it}.onFailure{err=it.message?:""}
     }
-    Box(Modifier.fillMaxSize()){
+
+    val source=if(scopeSel=="TEAM") data?.team else data?.mine
+    val departments=(boot.departments + (source?.map{it.department} ?: emptyList())).filter{it.isNotBlank()}.distinct().sorted()
+    val categories=(boot.ticketCategories + (source?.map{it.category} ?: emptyList())).filter{it.isNotBlank()}.distinct().sorted()
+    val urgencies=(boot.priorities + (source?.map{it.urgency} ?: emptyList())).filter{it.isNotBlank()}.distinct().sorted()
+    val list=source?.filter{
+        val statusOk=status=="ALL" || it.status.uppercase()==status || (status=="OPEN" && it.status.uppercase() in listOf("OPEN","ASSIGNED"))
+        val deptOk=department=="ALL" || it.department==department
+        val catOk=category=="ALL" || it.category==category
+        val urgOk=urgency=="ALL" || it.urgency==urgency
+        statusOk && deptOk && catOk && urgOk
+    }
+
+    Box(Modifier.fillMaxSize().background(Color(0xFFF7FAF8))){
         Column(Modifier.fillMaxSize()){
             if(boot.canViewTeamTickets) Segmented(listOf("MY" to "My","TEAM" to "Team"),scopeSel){scopeSel=it}
             Row(Modifier.fillMaxWidth().padding(horizontal=10.dp,vertical=6.dp),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){
                 Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(6.dp)){
                     listOf("ALL","OPEN","IN PROGRESS","WAITING","RESOLVED","CLOSED").forEach{s->
-                        FilterChip(selected=status==s,onClick={status=s},label={Text(s.lowercase().replaceFirstChar{it.uppercase()},fontSize=11.sp)})
+                        FilterChip(
+                            selected=status==s,
+                            onClick={status=s},
+                            label={Text(s.lowercase().replaceFirstChar{it.uppercase()},fontSize=11.sp)},
+                            colors=FilterChipDefaults.filterChipColors(selectedContainerColor=Color(0xFFE9E0FF),selectedLabelColor=Color(0xFF44227A))
+                        )
                     }
                 }
-                IconButton(onClick={filtersOpen=!filtersOpen}){Icon(Icons.Default.Tune,"Filters")}
+                IconButton(onClick={filtersOpen=!filtersOpen}){
+                    BadgedBox(badge={
+                        val active=listOf(department,category,urgency).count{it!="ALL"}
+                        if(active>0) Badge{Text(active.toString())}
+                    }){Icon(Icons.Default.Tune,"Filters")}
+                }
             }
+
             if(filtersOpen){
-                Card(Modifier.fillMaxWidth().padding(horizontal=10.dp,vertical=4.dp),colors=CardDefaults.cardColors(containerColor=Color.White)){
-                    Column(Modifier.padding(10.dp)){
-                        Text("Filters",fontWeight=FontWeight.Bold)
-                        Text("Department, category, urgency and date filters are collapsed by default.",fontSize=11.sp,color=TextMuted)
-                        TextButton(onClick={filtersOpen=false}){Text("Collapse")}
+                Card(
+                    Modifier.fillMaxWidth().padding(horizontal=10.dp,vertical=4.dp),
+                    colors=CardDefaults.cardColors(containerColor=Color.White),
+                    border=androidx.compose.foundation.BorderStroke(1.dp,Color(0xFFDCE5EA)),
+                    shape=RoundedCornerShape(14.dp)
+                ){
+                    Column(Modifier.padding(12.dp)){
+                        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){
+                            Text("Filters",fontWeight=FontWeight.Black,fontSize=15.sp,color=Color(0xFF182A3B))
+                            TextButton(onClick={department="ALL";category="ALL";urgency="ALL"}){Text("Clear all")}
+                        }
+                        TicketFilterRow("Department",departments,department){department=it}
+                        TicketFilterRow("Category",categories,category){category=it}
+                        TicketFilterRow("Urgency",urgencies,urgency){urgency=it}
+                        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.End){
+                            TextButton(onClick={filtersOpen=false}){Text("Collapse")}
+                        }
                     }
                 }
             }
+
             if(err.isNotBlank()) ErrorCard(err)
-            val list=(if(scopeSel=="TEAM") data?.team else data?.mine)?.filter{
-                status=="ALL" || it.status.uppercase()==status || (status=="OPEN" && it.status.uppercase() in listOf("OPEN","ASSIGNED"))
-            }
             if(list==null){
                 LinearProgressIndicator(Modifier.fillMaxWidth(),color=LpplGreen)
             } else if(list.isEmpty()){
-                EmptyState("No tickets")
+                EmptyState("No tickets match these filters")
             } else {
-                LazyColumn(Modifier.fillMaxSize().padding(horizontal=10.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
+                LazyColumn(
+                    Modifier.fillMaxSize().padding(horizontal=10.dp),
+                    verticalArrangement=Arrangement.spacedBy(8.dp),
+                    contentPadding=PaddingValues(bottom=90.dp)
+                ){
                     items(list,key={it.ticketId}){TicketRow(it)}
                 }
             }
@@ -754,6 +796,20 @@ private fun TicketsScreen(token:String,boot:BootstrapData){
             modifier=Modifier.align(Alignment.BottomEnd).padding(16.dp),
             shape=RoundedCornerShape(16.dp)
         ){Icon(Icons.Default.Add,"New Ticket")}
+    }
+}
+
+@Composable
+private fun TicketFilterRow(label:String,options:List<String>,selected:String,onSelect:(String)->Unit){
+    Text(label.uppercase(),fontSize=9.sp,fontWeight=FontWeight.Black,color=Color(0xFF6E7D8F))
+    Row(
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(bottom=7.dp),
+        horizontalArrangement=Arrangement.spacedBy(6.dp)
+    ){
+        FilterChip(selected=selected=="ALL",onClick={onSelect("ALL")},label={Text("All",fontSize=10.sp)})
+        options.forEach{value->
+            FilterChip(selected=selected==value,onClick={onSelect(value)},label={Text(value,fontSize=10.sp,maxLines=1)})
+        }
     }
 }
 
@@ -817,130 +873,188 @@ private fun AlertsScreen(token:String){
 private fun ShiftRosterScreen(token:String,boot:BootstrapData){
     var data by remember{mutableStateOf<ShiftResult?>(null)}
     var err by remember{mutableStateOf("")}
-    LaunchedEffect(Unit){
+    var reloadKey by remember{mutableStateOf(0)}
+    var editRow by remember{mutableStateOf<ShiftRow?>(null)}
+    var selectedShiftId by remember{mutableStateOf("")}
+    var saving by remember{mutableStateOf(false)}
+    val scope=rememberCoroutineScope()
+
+    LaunchedEffect(reloadKey){
+        err=""
         runCatching{ApiClient.shiftRoster(token,boot.canManageTeamShifts)}
             .onSuccess{data=it}
             .onFailure{err=it.message?:"Unable to load shift roster"}
     }
 
-    LazyColumn(
-        Modifier.fillMaxSize().background(Color(0xFFF7FAF8)).padding(14.dp),
-        verticalArrangement=Arrangement.spacedBy(10.dp)
-    ){
-        item{
-            Card(
-                colors=CardDefaults.cardColors(containerColor=Color.White),
-                border=androidx.compose.foundation.BorderStroke(1.dp,Color(0xFFD9E2EA)),
-                shape=RoundedCornerShape(15.dp)
-            ){
-                Row(Modifier.padding(13.dp),verticalAlignment=Alignment.CenterVertically){
-                    Icon(Icons.Default.CalendarMonth,null,tint=LpplGreen,modifier=Modifier.size(20.dp))
-                    Spacer(Modifier.width(9.dp))
-                    Column{
-                        Text("LPPL Operational Shift Roster",fontSize=13.sp,fontWeight=FontWeight.Black,color=Color(0xFF0E6F31))
-                        Text(
-                            if(boot.canManageTeamShifts)"Direct-report team shift schedule" else "Your current assigned shift",
-                            fontSize=10.sp,color=Color(0xFF65758B)
-                        )
-                    }
-                }
-            }
-        }
-
-        item{
-            Text(
-                if(boot.canManageTeamShifts)"TEAM SHIFT ROSTER" else "MY ASSIGNED SHIFT",
-                fontSize=11.sp,fontWeight=FontWeight.Black,color=Color(0xFF172A3A)
-            )
-        }
-
-        if(err.isNotBlank()){
-            item{ErrorCard(err)}
-        } else if(data==null){
-            item{LinearProgressIndicator(Modifier.fillMaxWidth(),color=LpplGreen)}
-        } else if(data!!.rows.isEmpty()){
+    Box(Modifier.fillMaxSize()){
+        LazyColumn(
+            Modifier.fillMaxSize().background(Color(0xFFF7FAF8)).padding(14.dp),
+            verticalArrangement=Arrangement.spacedBy(10.dp)
+        ){
             item{
-                Card(colors=CardDefaults.cardColors(containerColor=Color.White),shape=RoundedCornerShape(13.dp)){
-                    Column(Modifier.fillMaxWidth().padding(18.dp),horizontalAlignment=Alignment.CenterHorizontally){
-                        Icon(Icons.Default.EventBusy,null,tint=Color(0xFF8290A3),modifier=Modifier.size(30.dp))
-                        Spacer(Modifier.height(8.dp))
-                        Text("No active shift assignment found",fontWeight=FontWeight.Bold,color=Color(0xFF33475B))
-                        Text("Contact your reporting manager if a shift should be assigned.",fontSize=10.sp,color=Color(0xFF8290A3))
-                    }
-                }
-            }
-        } else {
-            items(data!!.rows,key={it.rosterId.ifBlank{it.employeeId+it.shiftCode}}){row->
                 Card(
                     colors=CardDefaults.cardColors(containerColor=Color.White),
                     border=androidx.compose.foundation.BorderStroke(1.dp,Color(0xFFD9E2EA)),
-                    shape=RoundedCornerShape(13.dp)
+                    shape=RoundedCornerShape(15.dp)
                 ){
-                    Row(
-                        Modifier.fillMaxWidth().padding(12.dp),
-                        horizontalArrangement=Arrangement.SpaceBetween,
-                        verticalAlignment=Alignment.CenterVertically
-                    ){
-                        Column(Modifier.weight(1f)){
-                            Row(verticalAlignment=Alignment.CenterVertically){
-                                Text(row.employeeName.ifBlank{boot.user.name},fontWeight=FontWeight.Black,fontSize=13.sp,color=Color(0xFF102033))
-                                if(row.employeeId.isNotBlank()){
-                                    Spacer(Modifier.width(6.dp))
-                                    Surface(shape=RoundedCornerShape(4.dp),color=Color(0xFFF0F5F8)){
-                                        Text(row.employeeId,Modifier.padding(horizontal=5.dp,vertical=2.dp),fontSize=8.sp,color=Color(0xFF53657D))
-                                    }
-                                }
-                            }
-                            Spacer(Modifier.height(3.dp))
-                            Text(
-                                listOf(row.department,row.shiftType.ifBlank{row.shiftName}).filter{it.isNotBlank()}.joinToString(" • "),
-                                fontSize=10.sp,color=Color(0xFF52718C)
-                            )
-                            if(row.startTime.isNotBlank() || row.endTime.isNotBlank()){
-                                Spacer(Modifier.height(3.dp))
-                                Text("${row.startTime} - ${row.endTime}  (${row.shiftCode})",fontSize=9.sp,color=Color(0xFF6F83A0))
-                            }
-                        }
-                        Surface(shape=RoundedCornerShape(6.dp),color=Color(0xFFF2F6F9)){
-                            Text("Read-only",Modifier.padding(horizontal=7.dp,vertical=5.dp),fontSize=8.sp,color=Color(0xFF8092AA))
+                    Row(Modifier.padding(13.dp),verticalAlignment=Alignment.CenterVertically){
+                        Icon(Icons.Default.CalendarMonth,null,tint=LpplGreen,modifier=Modifier.size(20.dp))
+                        Spacer(Modifier.width(9.dp))
+                        Column{
+                            Text("LPPL Operational Shift Roster",fontSize=13.sp,fontWeight=FontWeight.Black,color=Color(0xFF0E6F31))
+                            Text(if(boot.canManageTeamShifts)"Direct-report team shift schedule" else "Your current assigned shift",fontSize=10.sp,color=Color(0xFF65758B))
                         }
                     }
                 }
             }
+
+            item{
+                Text(if(boot.canManageTeamShifts)"TEAM SHIFT ROSTER" else "MY ASSIGNED SHIFT",fontSize=11.sp,fontWeight=FontWeight.Black,color=Color(0xFF172A3A))
+            }
+
+            if(err.isNotBlank()){
+                item{ErrorCard(err)}
+            } else if(data==null){
+                item{LinearProgressIndicator(Modifier.fillMaxWidth(),color=LpplGreen)}
+            } else if(data!!.rows.isEmpty()){
+                item{
+                    Card(colors=CardDefaults.cardColors(containerColor=Color.White),shape=RoundedCornerShape(13.dp)){
+                        Column(Modifier.fillMaxWidth().padding(18.dp),horizontalAlignment=Alignment.CenterHorizontally){
+                            Icon(Icons.Default.EventBusy,null,tint=Color(0xFF8290A3),modifier=Modifier.size(30.dp))
+                            Spacer(Modifier.height(8.dp))
+                            Text("No active shift assignment found",fontWeight=FontWeight.Bold,color=Color(0xFF33475B))
+                            Text("Contact your reporting manager if a shift should be assigned.",fontSize=10.sp,color=Color(0xFF8290A3))
+                        }
+                    }
+                }
+            } else {
+                items(data!!.rows,key={it.rosterId.ifBlank{it.employeeId+it.shiftCode}}){row->
+                    Card(
+                        colors=CardDefaults.cardColors(containerColor=Color.White),
+                        border=androidx.compose.foundation.BorderStroke(1.dp,Color(0xFFD9E2EA)),
+                        shape=RoundedCornerShape(13.dp)
+                    ){
+                        Row(
+                            Modifier.fillMaxWidth().padding(12.dp),
+                            horizontalArrangement=Arrangement.SpaceBetween,
+                            verticalAlignment=Alignment.CenterVertically
+                        ){
+                            Column(Modifier.weight(1f)){
+                                Row(verticalAlignment=Alignment.CenterVertically){
+                                    Text(row.employeeName.ifBlank{boot.user.name},fontWeight=FontWeight.Black,fontSize=13.sp,color=Color(0xFF102033))
+                                    if(row.employeeId.isNotBlank()){
+                                        Spacer(Modifier.width(6.dp))
+                                        Surface(shape=RoundedCornerShape(4.dp),color=Color(0xFFF0F5F8)){
+                                            Text(row.employeeId,Modifier.padding(horizontal=5.dp,vertical=2.dp),fontSize=8.sp,color=Color(0xFF53657D))
+                                        }
+                                    }
+                                }
+                                Spacer(Modifier.height(3.dp))
+                                Text(listOf(row.department,row.shiftType.ifBlank{row.shiftName}).filter{it.isNotBlank()}.joinToString(" • "),fontSize=10.sp,color=Color(0xFF52718C))
+                                if(row.startTime.isNotBlank() || row.endTime.isNotBlank()){
+                                    Spacer(Modifier.height(3.dp))
+                                    Text(row.startTime+" - "+row.endTime+"  ("+row.shiftCode+")",fontSize=9.sp,color=Color(0xFF6F83A0))
+                                }
+                            }
+                            if(boot.canManageTeamShifts){
+                                Button(
+                                    onClick={editRow=row;selectedShiftId=row.shiftId},
+                                    shape=RoundedCornerShape(8.dp),
+                                    contentPadding=PaddingValues(horizontal=10.dp,vertical=4.dp)
+                                ){
+                                    Icon(Icons.Default.Edit,null,Modifier.size(14.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("Change Shift",fontSize=9.sp)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        val row=editRow
+        if(row!=null){
+            AlertDialog(
+                onDismissRequest={if(!saving)editRow=null},
+                title={Text("Change Shift - "+row.employeeName,fontWeight=FontWeight.Black)},
+                text={
+                    Column{
+                        Text("Current: "+row.shiftCode+" • "+row.startTime+"-"+row.endTime,fontSize=11.sp,color=TextMuted)
+                        Spacer(Modifier.height(10.dp))
+                        Text("Select new shift",fontSize=11.sp,fontWeight=FontWeight.Bold)
+                        Spacer(Modifier.height(6.dp))
+                        LazyColumn(Modifier.heightIn(max=320.dp),verticalArrangement=Arrangement.spacedBy(5.dp)){
+                            items(data?.shifts ?: emptyList(),key={it.shiftId}){shift->
+                                Card(
+                                    Modifier.fillMaxWidth().clickable{selectedShiftId=shift.shiftId},
+                                    colors=CardDefaults.cardColors(containerColor=if(selectedShiftId==shift.shiftId)Color(0xFFE7F8EB) else Color.White),
+                                    border=androidx.compose.foundation.BorderStroke(1.dp,if(selectedShiftId==shift.shiftId)Color(0xFF64CF86) else Color(0xFFDCE5EA))
+                                ){
+                                    Column(Modifier.padding(10.dp)){
+                                        Text(shift.shiftCode+" - "+shift.shiftName,fontWeight=FontWeight.Bold,fontSize=12.sp)
+                                        Text(shift.shiftType+" • "+shift.startTime+" - "+shift.endTime,fontSize=10.sp,color=TextMuted)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton={
+                    Button(
+                        enabled=!saving && selectedShiftId.isNotBlank() && selectedShiftId!=row.shiftId,
+                        onClick={
+                            saving=true
+                            scope.launch{
+                                runCatching{ApiClient.saveShiftRoster(token,row,selectedShiftId)}
+                                    .onSuccess{editRow=null;reloadKey++}
+                                    .onFailure{err=it.message?:"Unable to change shift"}
+                                saving=false
+                            }
+                        }
+                    ){if(saving)CircularProgressIndicator(Modifier.size(16.dp),strokeWidth=2.dp,color=Color.White) else Text("Save Shift")}
+                },
+                dismissButton={TextButton(enabled=!saving,onClick={editRow=null}){Text("Cancel")}}
+            )
         }
     }
 }
 
 @Composable
-private fun MoreScreen(boot:BootstrapData,onShiftRoster:()->Unit,onLogout:()->Unit){
+private fun MoreScreen(boot:BootstrapData,profile:ProfileData?,onShiftRoster:()->Unit,onLogout:()->Unit){
+    var profileOpen by remember{mutableStateOf(false)}
     var settingsOpen by remember{mutableStateOf(false)}
     LazyColumn(
         Modifier.fillMaxSize().background(Color(0xFFF7FAF8)).padding(12.dp),
         verticalArrangement=Arrangement.spacedBy(9.dp)
     ){
         item{
-            InfoRow(
-                Icons.Default.Person,
-                "${boot.user.employeeId} · ${boot.user.name}",
-                "${boot.user.department} • ${boot.user.effectiveRole}",
-                onClick={}
-            )
+            Card(
+                Modifier.fillMaxWidth().clickable{profileOpen=!profileOpen},
+                colors=CardDefaults.cardColors(containerColor=Color.White),
+                border=androidx.compose.foundation.BorderStroke(1.dp,Color(0xFFD9E2EA)),
+                shape=RoundedCornerShape(15.dp)
+            ){
+                Row(Modifier.padding(14.dp),verticalAlignment=Alignment.CenterVertically){
+                    ProfileAvatar(profile?.profilePhotoDataUri.orEmpty(),boot.user.name,54.dp)
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)){
+                        Text(profile?.name?.ifBlank{boot.user.name} ?: boot.user.name,fontWeight=FontWeight.Black,fontSize=16.sp,color=Color(0xFF14283A))
+                        Text(boot.user.employeeId+" • "+boot.user.effectiveRole,fontSize=10.sp,color=Color(0xFF64748B))
+                        Text(boot.user.department,fontSize=10.sp,color=Color(0xFF16813A))
+                    }
+                    Icon(if(profileOpen)Icons.Default.ExpandLess else Icons.Default.ChevronRight,null,tint=Color(0xFF91A0B1))
+                }
+            }
+        }
+        if(profileOpen){
+            item{ProfileDetailsCard(boot,profile)}
         }
         item{
-            InfoRow(
-                Icons.Default.CalendarMonth,
-                "Shift Roster",
-                if(boot.canManageTeamShifts)"View direct-report team shifts" else "View my assigned shift",
-                onClick=onShiftRoster
-            )
+            InfoRow(Icons.Default.CalendarMonth,"Shift Roster",if(boot.canManageTeamShifts)"View and change direct-report team shifts" else "View my assigned shift",onClick=onShiftRoster)
         }
         item{
-            InfoRow(
-                Icons.Default.Settings,
-                "Settings",
-                "Profile and app preferences",
-                onClick={settingsOpen=!settingsOpen}
-            )
+            InfoRow(Icons.Default.Settings,"Settings","Profile and app preferences",onClick={settingsOpen=!settingsOpen})
         }
         if(settingsOpen){
             item{
@@ -952,26 +1066,46 @@ private fun MoreScreen(boot:BootstrapData,onShiftRoster:()->Unit,onLogout:()->Un
                     Column(Modifier.padding(14.dp)){
                         Text("PROFILE & SETTINGS",fontSize=10.sp,fontWeight=FontWeight.Black,color=Color(0xFF172A3A))
                         Spacer(Modifier.height(10.dp))
-                        SettingLine("Employee ID",boot.user.employeeId)
-                        SettingLine("Name",boot.user.name)
-                        SettingLine("Department",boot.user.department)
-                        SettingLine("Designation",boot.user.designation)
-                        SettingLine("Role",boot.user.effectiveRole)
+                        ProfileDetailsRows(boot,profile)
+                        HorizontalDivider(Modifier.padding(vertical=8.dp))
                         SettingLine("App","LPPL PMS Native")
+                        SettingLine("Version","1.2.0")
                     }
                 }
             }
         }
         item{
-            OutlinedButton(
-                onClick=onLogout,
-                modifier=Modifier.fillMaxWidth(),
-                shape=RoundedCornerShape(10.dp)
-            ){
+            OutlinedButton(onClick=onLogout,modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(10.dp)){
                 Icon(Icons.Default.Logout,null);Spacer(Modifier.width(6.dp));Text("Log out")
             }
         }
     }
+}
+
+@Composable
+private fun ProfileDetailsCard(boot:BootstrapData,profile:ProfileData?){
+    Card(
+        colors=CardDefaults.cardColors(containerColor=Color(0xFFEFFAF2)),
+        border=androidx.compose.foundation.BorderStroke(1.dp,Color(0xFFB9E8C6)),
+        shape=RoundedCornerShape(13.dp)
+    ){
+        Column(Modifier.padding(14.dp)){
+            Text("PROFILE DETAILS",fontSize=10.sp,fontWeight=FontWeight.Black,color=Color(0xFF16752A))
+            Spacer(Modifier.height(9.dp))
+            ProfileDetailsRows(boot,profile)
+        }
+    }
+}
+
+@Composable
+private fun ProfileDetailsRows(boot:BootstrapData,profile:ProfileData?){
+    SettingLine("Employee ID",profile?.employeeId?.ifBlank{boot.user.employeeId} ?: boot.user.employeeId)
+    SettingLine("Name",profile?.name?.ifBlank{boot.user.name} ?: boot.user.name)
+    SettingLine("Department",profile?.department?.ifBlank{boot.user.department} ?: boot.user.department)
+    SettingLine("Designation",profile?.designation?.ifBlank{boot.user.designation} ?: boot.user.designation)
+    SettingLine("Role",boot.user.effectiveRole)
+    if(!profile?.email.isNullOrBlank()) SettingLine("Email",profile!!.email)
+    if(!profile?.phone.isNullOrBlank()) SettingLine("Phone",profile!!.phone)
 }
 
 @Composable
