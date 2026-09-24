@@ -26,6 +26,7 @@ function doPost(e) {
       case 'get_notifications': out = mobileNotifications_(body.token); break;
       case 'mark_all_notifications_read': out = mobileData_(api_markAllNotificationsRead(body.token)); break;
       case 'get_shift_roster': out = mobileData_(api_getShiftRosterV46(body.token, body.filters || {})); break;
+      case 'get_my_shift': out = mobileMyShift_(body.token); break;
       case 'save_shift_roster': out = mobileData_(api_saveShiftRosterV46(body.token, body.input || {})); break;
       default: out = { success:false, error:'Unknown mobile action: ' + action };
     }
@@ -214,4 +215,34 @@ function mobileNotifications_(token) {
       isRead:String(n.IsRead || '').toLowerCase() === 'yes'
     }))
   }};
+}
+
+
+function mobileMyShift_(token) {
+  const me = requireSession_(token, null);
+  const today = dateKeyV42_(new Date());
+  const shiftMap = {};
+  getActiveShiftMasterV46_().forEach(s => shiftMap[String(s.ShiftID || '')] = s);
+
+  const rows = sheetToObjects_(SHEET_NAMES.SHIFT_ROSTER)
+    .filter(row => {
+      if (String(row.Status || '') !== ACTIVE_STATUS) return false;
+      if (String(row.UserID || '') !== String(me.UserID || '')) return false;
+      const fromKey = dateKeyV42_(row.EffectiveFrom);
+      const toKey = dateKeyV42_(row.EffectiveTo);
+      return fromKey && toKey && fromKey <= today && toKey >= today;
+    })
+    .map(row => {
+      const shift = shiftMap[String(row.ShiftID || '')] || {};
+      return {
+        RosterID:row.RosterID, UserID:me.UserID, EmployeeID:me.EmployeeID, EmployeeName:me.Name,
+        Department:me.Department, Designation:me.Designation,
+        ShiftID:row.ShiftID, ShiftCode:row.ShiftCode, ShiftName:shift.ShiftName || row.ShiftCode || '',
+        ShiftType:shift.ShiftType || shiftTypeFromNameV47_(shift.ShiftName),
+        StartTime:cleanShiftTimeV47_(shift,'start'), EndTime:cleanShiftTimeV47_(shift,'end'),
+        EffectiveFrom:row.EffectiveFrom, EffectiveTo:row.EffectiveTo, Status:row.Status
+      };
+    });
+
+  return { success:true, data:{ rows:rows } };
 }
