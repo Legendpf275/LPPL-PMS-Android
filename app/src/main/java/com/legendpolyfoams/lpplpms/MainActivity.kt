@@ -34,7 +34,7 @@ import java.util.Locale
 
 private val LpplGreen = Color(0xFF39A844)
 private val LpplDark = Color(0xFF16752A)
-private val Bg = Color(0xFFF4F7F4)
+private val Bg = Color(0xFFF7FAF8)
 private val TextPrimary = Color(0xFF17211A)
 private val TextMuted = Color(0xFF6B756D)
 
@@ -667,16 +667,22 @@ private fun TicketsScreen(token:String,boot:BootstrapData){
         }
         FloatingActionButton(
             onClick={},
-            containerColor=LpplGreen,
+            containerColor=Color(0xFF31B84B),
             contentColor=Color.White,
-            modifier=Modifier.align(Alignment.BottomEnd).padding(16.dp)
+            modifier=Modifier.align(Alignment.BottomEnd).padding(16.dp),
+            shape=RoundedCornerShape(16.dp)
         ){Icon(Icons.Default.Add,"New Ticket")}
     }
 }
 
 @Composable
 private fun TicketRow(t:TicketItem){
-    Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(12.dp),colors=CardDefaults.cardColors(containerColor=Color.White)){
+    Card(
+        Modifier.fillMaxWidth(),
+        shape=RoundedCornerShape(13.dp),
+        colors=CardDefaults.cardColors(containerColor=Color.White),
+        border=androidx.compose.foundation.BorderStroke(1.dp,Color(0xFFDDE6EC))
+    ){
         Column(Modifier.padding(11.dp)){
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){
                 StatusChip(t.status)
