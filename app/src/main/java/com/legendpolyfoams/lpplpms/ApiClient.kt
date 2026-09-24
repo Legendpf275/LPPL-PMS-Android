@@ -153,8 +153,9 @@ object ApiClient {
         ).also{ticketCache=CacheEntry(now,it)}
     }
 
-    suspend fun shiftRoster(token:String):ShiftResult{
-        val d=jo(call("get_shift_roster",token),"data")
+    suspend fun shiftRoster(token:String,canManageTeam:Boolean):ShiftResult{
+        val action=if(canManageTeam) "get_shift_roster" else "get_my_shift"
+        val d=jo(call(action,token),"data")
         return ShiftResult(arr(d,"rows").map{parseShift(it.asJsonObject)})
     }
 
