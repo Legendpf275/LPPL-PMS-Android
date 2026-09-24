@@ -616,7 +616,7 @@ private fun TasksScreen(token:String,boot:BootstrapData,initialTab:String="today
                 }
                 Spacer(Modifier.weight(1f))
                 if(selecting){
-                    Button(onClick={openTransfer},enabled=selectedIds.isNotEmpty()){
+                    Button(onClick={openTransfer()},enabled=selectedIds.isNotEmpty()){
                         Text("Transfer selected (${selectedIds.size})")
                     }
                 }
