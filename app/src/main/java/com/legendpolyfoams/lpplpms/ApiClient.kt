@@ -35,7 +35,7 @@ data class TaskResult(val tasks:List<TaskItem>, val counts:Map<String,Int> = emp
 data class TicketResult(val mine:List<TicketItem>,val team:List<TicketItem>,val canViewTeam:Boolean)
 data class ShiftRow(
     val rosterId:String="", val userId:String="", val employeeId:String="", val employeeName:String="",
-    val department:String="", val designation:String="", val shiftCode:String="", val shiftName:String="",
+    val department:String="", val designation:String="", val shiftId:String="", val shiftCode:String="", val shiftName:String="",
     val shiftType:String="", val startTime:String="", val endTime:String="", val effectiveFrom:String="", val effectiveTo:String=""
 )
 data class ShiftOption(
@@ -100,7 +100,7 @@ object ApiClient {
     )
     private fun parseShift(o:JsonObject)=ShiftRow(
         s(o,"RosterID"),s(o,"UserID"),s(o,"EmployeeID"),s(o,"EmployeeName"),
-        s(o,"Department"),s(o,"Designation"),s(o,"ShiftCode"),s(o,"ShiftName"),
+        s(o,"Department"),s(o,"Designation"),s(o,"ShiftID"),s(o,"ShiftCode"),s(o,"ShiftName"),
         s(o,"ShiftType"),s(o,"StartTime"),s(o,"EndTime"),s(o,"EffectiveFrom"),s(o,"EffectiveTo")
     )
 
