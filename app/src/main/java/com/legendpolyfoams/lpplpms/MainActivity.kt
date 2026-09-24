@@ -9,7 +9,7 @@ import android.media.MediaRecorder
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.util.Base64
-import android.widget.DatePickerDialog
+import android.app.DatePickerDialog
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
