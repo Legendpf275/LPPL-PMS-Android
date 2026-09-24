@@ -59,7 +59,10 @@ private fun LpplApp(session: SessionStore) {
         if (token.isBlank()) { loading=false; bootstrap=null; return@LaunchedEffect }
         loading=true; error=""
         runCatching { ApiClient.bootstrap(token) }
-            .onSuccess { bootstrap=it }
+            .onSuccess {
+                bootstrap=it
+                launch { ApiClient.prefetchTodayTasks(token) }
+            }
             .onFailure { error=it.message ?: "Unable to connect"; session.clear(); token="" }
         loading=false
     }
@@ -396,14 +399,14 @@ private fun DashboardScreen(token:String,boot:BootstrapData,onTasks:()->Unit,onS
                             Text(dateText,fontSize=10.sp,color=Color(0xFF00855A),fontWeight=FontWeight.Bold)
                         }
                         Spacer(Modifier.height(6.dp))
-                        Text("Hello, \${boot.user.name.ifBlank{"Employee"}}",fontSize=16.sp,fontWeight=FontWeight.Black,color=Color(0xFF07111F))
+                        Text("Hello, ${boot.user.name.ifBlank{"Employee"}}",fontSize=16.sp,fontWeight=FontWeight.Black,color=Color(0xFF07111F))
                         Spacer(Modifier.height(2.dp))
-                        Text("\${boot.user.department.ifBlank{"LPPL"}} • \${boot.user.effectiveRole}",fontSize=10.sp,color=Color(0xFF557085))
+                        Text("${boot.user.department.ifBlank{"LPPL"}} • ${boot.user.effectiveRole}",fontSize=10.sp,color=Color(0xFF557085))
                     }
                     Surface(shape=RoundedCornerShape(13.dp),color=Color(0xFFE9FFF1),border=androidx.compose.foundation.BorderStroke(1.dp,Color(0xFF82E9A9))){
                         Column(Modifier.padding(horizontal=13.dp,vertical=9.dp),horizontalAlignment=Alignment.CenterHorizontally){
                             Text("HISTORICAL",fontSize=9.sp,fontWeight=FontWeight.Bold,color=Color(0xFF14763B))
-                            Text("\${completion}%",fontSize=21.sp,fontWeight=FontWeight.Black,color=Color(0xFF14883E))
+                            Text("${completion}%",fontSize=21.sp,fontWeight=FontWeight.Black,color=Color(0xFF14883E))
                             Text("Completion",fontSize=8.sp,color=Color(0xFF14883E))
                         }
                     }
@@ -782,7 +785,7 @@ private fun ShiftRosterScreen(token:String,boot:BootstrapData){
                             )
                             if(row.startTime.isNotBlank() || row.endTime.isNotBlank()){
                                 Spacer(Modifier.height(3.dp))
-                                Text("\${row.startTime} - \${row.endTime}  (\${row.shiftCode})",fontSize=9.sp,color=Color(0xFF6F83A0))
+                                Text("${row.startTime} - ${row.endTime}  (${row.shiftCode})",fontSize=9.sp,color=Color(0xFF6F83A0))
                             }
                         }
                         Surface(shape=RoundedCornerShape(6.dp),color=Color(0xFFF2F6F9)){
@@ -805,8 +808,8 @@ private fun MoreScreen(boot:BootstrapData,onShiftRoster:()->Unit,onLogout:()->Un
         item{
             InfoRow(
                 Icons.Default.Person,
-                "\${boot.user.employeeId} · \${boot.user.name}",
-                "\${boot.user.department} • \${boot.user.effectiveRole}",
+                "${boot.user.employeeId} · ${boot.user.name}",
+                "${boot.user.department} • ${boot.user.effectiveRole}",
                 onClick={}
             )
         }
