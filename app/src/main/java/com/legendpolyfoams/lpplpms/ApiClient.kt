@@ -34,7 +34,8 @@ data class BootstrapData(
 data class DashboardData(val raw:JsonObject=JsonObject())
 data class LoginResult(val token:String,val user:User)
 data class TaskResult(val tasks:List<TaskItem>, val counts:Map<String,Int> = emptyMap())
-data class TicketResult(val mine:List<TicketItem>,val team:List<TicketItem>,val canViewTeam:Boolean)
+data class TicketUser(val userId:String,val employeeId:String,val name:String,val department:String)
+data class TicketResult(val mine:List<TicketItem>,val team:List<TicketItem>,val canViewTeam:Boolean,val users:List<TicketUser> = emptyList())
 data class ShiftRow(
     val rosterId:String="", val userId:String="", val employeeId:String="", val employeeName:String="",
     val department:String="", val designation:String="", val shiftId:String="", val shiftCode:String="", val shiftName:String="",
@@ -227,8 +228,26 @@ object ApiClient {
         return TicketResult(
             arr(d,"mine").map{parseTicket(it.asJsonObject)},
             arr(d,"team").map{parseTicket(it.asJsonObject)},
-            b(d,"canViewTeam")
+            b(d,"canViewTeam"),
+            arr(d,"ticketUsers").map{val u=it.asJsonObject;TicketUser(s(u,"UserID"),s(u,"EmployeeID"),s(u,"Name"),s(u,"Department"))}
         ).also{ticketCache=CacheEntry(now,it)}
+    }
+
+    suspend fun createTicket(token:String,department:String,userId:String,category:String,priority:String,dueDate:String,description:String,machineArea:String):String{
+        val ticket=JsonObject().apply{
+            addProperty("Department",department)
+            addProperty("AssignedToUserID",userId)
+            addProperty("Category",category)
+            addProperty("Priority",priority)
+            addProperty("DueDate",dueDate)
+            addProperty("Description",description)
+            addProperty("MachineArea",machineArea)
+        }
+        val p=JsonObject().apply{add("ticket",ticket)}
+        val id=s(jo(call("create_ticket",token,p),"data"),"ticketId")
+        ticketCache=null
+        dashboardCache=null
+        return id
     }
 
     suspend fun shiftRoster(token:String,canManageTeam:Boolean):ShiftResult{
