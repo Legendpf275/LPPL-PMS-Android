@@ -698,13 +698,160 @@ private fun AlertsScreen(token:String){
 }
 
 @Composable
-private fun MoreScreen(boot:BootstrapData,onLogout:()->Unit){
-    LazyColumn(Modifier.fillMaxSize().padding(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
-        item{InfoRow(Icons.Default.Person,"${boot.user.employeeId} · ${boot.user.name}",boot.user.effectiveRole)}
-        if(boot.canManageTeamShifts)item{InfoRow(Icons.Default.Schedule,"Shift Roster","Manage direct-report shifts")}
-        item{InfoRow(Icons.Default.Settings,"Settings","Profile and preferences")}
+private fun ShiftRosterScreen(token:String,boot:BootstrapData){
+    var data by remember{mutableStateOf<ShiftResult?>(null)}
+    var err by remember{mutableStateOf("")}
+    LaunchedEffect(Unit){
+        runCatching{ApiClient.shiftRoster(token,boot.canManageTeamShifts)}
+            .onSuccess{data=it}
+            .onFailure{err=it.message?:"Unable to load shift roster"}
+    }
+
+    LazyColumn(
+        Modifier.fillMaxSize().background(Color(0xFFF7FAF8)).padding(14.dp),
+        verticalArrangement=Arrangement.spacedBy(10.dp)
+    ){
         item{
-            OutlinedButton(onClick=onLogout,modifier=Modifier.fillMaxWidth()){
+            Card(
+                colors=CardDefaults.cardColors(containerColor=Color.White),
+                border=androidx.compose.foundation.BorderStroke(1.dp,Color(0xFFD9E2EA)),
+                shape=RoundedCornerShape(15.dp)
+            ){
+                Row(Modifier.padding(13.dp),verticalAlignment=Alignment.CenterVertically){
+                    Icon(Icons.Default.CalendarMonth,null,tint=LpplGreen,modifier=Modifier.size(20.dp))
+                    Spacer(Modifier.width(9.dp))
+                    Column{
+                        Text("LPPL Operational Shift Roster",fontSize=13.sp,fontWeight=FontWeight.Black,color=Color(0xFF0E6F31))
+                        Text(
+                            if(boot.canManageTeamShifts)"Direct-report team shift schedule" else "Your current assigned shift",
+                            fontSize=10.sp,color=Color(0xFF65758B)
+                        )
+                    }
+                }
+            }
+        }
+
+        item{
+            Text(
+                if(boot.canManageTeamShifts)"TEAM SHIFT ROSTER" else "MY ASSIGNED SHIFT",
+                fontSize=11.sp,fontWeight=FontWeight.Black,color=Color(0xFF172A3A)
+            )
+        }
+
+        if(err.isNotBlank()){
+            item{ErrorCard(err)}
+        } else if(data==null){
+            item{LinearProgressIndicator(Modifier.fillMaxWidth(),color=LpplGreen)}
+        } else if(data!!.rows.isEmpty()){
+            item{
+                Card(colors=CardDefaults.cardColors(containerColor=Color.White),shape=RoundedCornerShape(13.dp)){
+                    Column(Modifier.fillMaxWidth().padding(18.dp),horizontalAlignment=Alignment.CenterHorizontally){
+                        Icon(Icons.Default.EventBusy,null,tint=Color(0xFF8290A3),modifier=Modifier.size(30.dp))
+                        Spacer(Modifier.height(8.dp))
+                        Text("No active shift assignment found",fontWeight=FontWeight.Bold,color=Color(0xFF33475B))
+                        Text("Contact your reporting manager if a shift should be assigned.",fontSize=10.sp,color=Color(0xFF8290A3))
+                    }
+                }
+            }
+        } else {
+            items(data!!.rows,key={it.rosterId.ifBlank{it.employeeId+it.shiftCode}}){row->
+                Card(
+                    colors=CardDefaults.cardColors(containerColor=Color.White),
+                    border=androidx.compose.foundation.BorderStroke(1.dp,Color(0xFFD9E2EA)),
+                    shape=RoundedCornerShape(13.dp)
+                ){
+                    Row(
+                        Modifier.fillMaxWidth().padding(12.dp),
+                        horizontalArrangement=Arrangement.SpaceBetween,
+                        verticalAlignment=Alignment.CenterVertically
+                    ){
+                        Column(Modifier.weight(1f)){
+                            Row(verticalAlignment=Alignment.CenterVertically){
+                                Text(row.employeeName.ifBlank{boot.user.name},fontWeight=FontWeight.Black,fontSize=13.sp,color=Color(0xFF102033))
+                                if(row.employeeId.isNotBlank()){
+                                    Spacer(Modifier.width(6.dp))
+                                    Surface(shape=RoundedCornerShape(4.dp),color=Color(0xFFF0F5F8)){
+                                        Text(row.employeeId,Modifier.padding(horizontal=5.dp,vertical=2.dp),fontSize=8.sp,color=Color(0xFF53657D))
+                                    }
+                                }
+                            }
+                            Spacer(Modifier.height(3.dp))
+                            Text(
+                                listOf(row.department,row.shiftType.ifBlank{row.shiftName}).filter{it.isNotBlank()}.joinToString(" • "),
+                                fontSize=10.sp,color=Color(0xFF52718C)
+                            )
+                            if(row.startTime.isNotBlank() || row.endTime.isNotBlank()){
+                                Spacer(Modifier.height(3.dp))
+                                Text("\${row.startTime} - \${row.endTime}  (\${row.shiftCode})",fontSize=9.sp,color=Color(0xFF6F83A0))
+                            }
+                        }
+                        Surface(shape=RoundedCornerShape(6.dp),color=Color(0xFFF2F6F9)){
+                            Text("Read-only",Modifier.padding(horizontal=7.dp,vertical=5.dp),fontSize=8.sp,color=Color(0xFF8092AA))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MoreScreen(boot:BootstrapData,onShiftRoster:()->Unit,onLogout:()->Unit){
+    var settingsOpen by remember{mutableStateOf(false)}
+    LazyColumn(
+        Modifier.fillMaxSize().background(Color(0xFFF7FAF8)).padding(12.dp),
+        verticalArrangement=Arrangement.spacedBy(9.dp)
+    ){
+        item{
+            InfoRow(
+                Icons.Default.Person,
+                "\${boot.user.employeeId} · \${boot.user.name}",
+                "\${boot.user.department} • \${boot.user.effectiveRole}",
+                onClick={}
+            )
+        }
+        item{
+            InfoRow(
+                Icons.Default.CalendarMonth,
+                "Shift Roster",
+                if(boot.canManageTeamShifts)"View direct-report team shifts" else "View my assigned shift",
+                onClick=onShiftRoster
+            )
+        }
+        item{
+            InfoRow(
+                Icons.Default.Settings,
+                "Settings",
+                "Profile and app preferences",
+                onClick={settingsOpen=!settingsOpen}
+            )
+        }
+        if(settingsOpen){
+            item{
+                Card(
+                    colors=CardDefaults.cardColors(containerColor=Color.White),
+                    border=androidx.compose.foundation.BorderStroke(1.dp,Color(0xFFD9E2EA)),
+                    shape=RoundedCornerShape(13.dp)
+                ){
+                    Column(Modifier.padding(14.dp)){
+                        Text("PROFILE & SETTINGS",fontSize=10.sp,fontWeight=FontWeight.Black,color=Color(0xFF172A3A))
+                        Spacer(Modifier.height(10.dp))
+                        SettingLine("Employee ID",boot.user.employeeId)
+                        SettingLine("Name",boot.user.name)
+                        SettingLine("Department",boot.user.department)
+                        SettingLine("Designation",boot.user.designation)
+                        SettingLine("Role",boot.user.effectiveRole)
+                        SettingLine("App","LPPL PMS Native")
+                    }
+                }
+            }
+        }
+        item{
+            OutlinedButton(
+                onClick=onLogout,
+                modifier=Modifier.fillMaxWidth(),
+                shape=RoundedCornerShape(10.dp)
+            ){
                 Icon(Icons.Default.Logout,null);Spacer(Modifier.width(6.dp));Text("Log out")
             }
         }
@@ -712,11 +859,31 @@ private fun MoreScreen(boot:BootstrapData,onLogout:()->Unit){
 }
 
 @Composable
-private fun InfoRow(icon:androidx.compose.ui.graphics.vector.ImageVector,title:String,sub:String){
-    Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=Color.White)){
+private fun SettingLine(label:String,value:String){
+    Row(Modifier.fillMaxWidth().padding(vertical=4.dp),horizontalArrangement=Arrangement.SpaceBetween){
+        Text(label,fontSize=10.sp,color=Color(0xFF7B8A9C))
+        Text(value.ifBlank{"—"},fontSize=10.sp,fontWeight=FontWeight.SemiBold,color=Color(0xFF20364A))
+    }
+}
+
+@Composable
+private fun InfoRow(icon:androidx.compose.ui.graphics.vector.ImageVector,title:String,sub:String,onClick:()->Unit){
+    Card(
+        Modifier.fillMaxWidth().clickable(onClick=onClick),
+        colors=CardDefaults.cardColors(containerColor=Color.White),
+        border=androidx.compose.foundation.BorderStroke(1.dp,Color(0xFFD9E2EA)),
+        shape=RoundedCornerShape(13.dp)
+    ){
         Row(Modifier.padding(14.dp),verticalAlignment=Alignment.CenterVertically){
-            Icon(icon,null,tint=LpplGreen);Spacer(Modifier.width(12.dp))
-            Column{Text(title,fontWeight=FontWeight.Bold);Text(sub,fontSize=11.sp,color=TextMuted)}
+            Surface(shape=RoundedCornerShape(9.dp),color=Color(0xFFEAF8EE)){
+                Icon(icon,null,tint=LpplGreen,modifier=Modifier.padding(8.dp).size(18.dp))
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)){
+                Text(title,fontWeight=FontWeight.Bold,color=Color(0xFF14283A))
+                Text(sub,fontSize=10.sp,color=Color(0xFF7A8A9B))
+            }
+            Icon(Icons.Default.ChevronRight,null,tint=Color(0xFF91A0B1),modifier=Modifier.size(18.dp))
         }
     }
 }
