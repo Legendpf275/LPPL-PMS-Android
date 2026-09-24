@@ -17,7 +17,7 @@ function api_getMyTaskWorkspaceV43(sessionToken) {
     const historyCutoff=dateKeyV42_(new Date(Date.now()-TEAM_TASK_COMPLETED_LOOKBACK_DAYS*86400000));
     const seenInstances={};
 
-    sheetToObjects_(SHEET_NAMES.TASK_INSTANCES)
+    dedupeTaskInstancesByLogicalV48_(sheetToObjects_(SHEET_NAMES.TASK_INSTANCES),masterById)
       .filter(task=>recordBelongsToUser_(task,me,'AssignedToUserID','AssignedToEmail'))
       .forEach(task=>{
         const instanceKey=String(task.TaskID||'');
@@ -83,7 +83,7 @@ function api_getTeamTaskWorkspaceV43(sessionToken,filters){
     const counts={today:0,upcoming:0,overdue:0,notdone:0,onleave:0,completed:0,unique:0,all:0};
     const instanceRows=[];
     const seenTeamInstances={};
-    const instances=sheetToObjects_(SHEET_NAMES.TASK_INSTANCES);
+    const instances=dedupeTaskInstancesByLogicalV48_(sheetToObjects_(SHEET_NAMES.TASK_INSTANCES),masterById);
     const todayLogical={};
     instances.forEach(task=>{
       const assignedId=String(task.AssignedToUserID||'');
@@ -147,6 +147,29 @@ function api_getTeamTaskWorkspaceV43(sessionToken,filters){
       filters:{tab:tab,department:requestedDepartment,userId:requestedUserId,search:search,fromDate:dateWindow.autoDefault?'':(dateWindow.fromKey||''),toDate:dateWindow.autoDefault?'':(dateWindow.toKey||'')}
     };
   });
+}
+
+// Multiple Task Masters can share a RecurringTaskID. Their generated rows
+// have distinct TaskIDs, so deduplicating only by TaskID leaves visible copies.
+// Keep one row for each assignee, logical task and due date. Prefer a completed
+// instance if one exists; this avoids showing a pending duplicate as work due.
+function dedupeTaskInstancesByLogicalV48_(instances, masterById) {
+  const byKey = {}, order = [];
+  (instances || []).forEach(task => {
+    const master = masterById[String(task.MasterID || '')] || {};
+    const logical = String(master.RecurringTaskID || master.AssignmentGroupID || master.MasterID || task.MasterID || task.TaskID || '');
+    const due = dateKeyV42_(task.DueDate) || String(task.TaskID || '');
+    const assigned = String(task.AssignedToUserID || task.AssignedToEmail || '');
+    const key = JSON.stringify([assigned, logical, due]);
+    if (!Object.prototype.hasOwnProperty.call(byKey, key)) {
+      byKey[key] = task;
+      order.push(key);
+    } else if (String(task.Status || '') === String(TASK_STATUS.COMPLETED) &&
+               String(byKey[key].Status || '') !== String(TASK_STATUS.COMPLETED)) {
+      byKey[key] = task;
+    }
+  });
+  return order.map(key => byKey[key]);
 }
 
 function taskWorkspaceRowV43_(task,master,me,scope){
