@@ -21,7 +21,9 @@ data class TaskItem(
 data class TicketItem(
     val ticketId:String="", val description:String="", val department:String="", val category:String="", val urgency:String="",
     val status:String="", val raisedByName:String="", val raisedByEmployeeId:String="", val assignedToName:String="",
-    val createdOn:String="", val dueDate:String="", val isCreatedByMe:Boolean=false, val isAssignedToMe:Boolean=false, val isOverdue:Boolean=false
+    val assignedToEmployeeId:String="", val createdOn:String="", val dueDate:String="",
+    val isCreatedByMe:Boolean=false, val isAssignedToMe:Boolean=false,
+    val isCreatedByTeam:Boolean=false, val isAssignedToTeam:Boolean=false, val isOverdue:Boolean=false
 )
 data class NotificationItem(val id:String="",val type:String="",val title:String="",val message:String="",val createdOn:String="",val isRead:Boolean=false)
 data class BootstrapData(
@@ -36,13 +38,21 @@ data class TicketResult(val mine:List<TicketItem>,val team:List<TicketItem>,val 
 data class ShiftRow(
     val rosterId:String="", val userId:String="", val employeeId:String="", val employeeName:String="",
     val department:String="", val designation:String="", val shiftId:String="", val shiftCode:String="", val shiftName:String="",
-    val shiftType:String="", val startTime:String="", val endTime:String="", val effectiveFrom:String="", val effectiveTo:String=""
+    val shiftType:String="", val startTime:String="", val endTime:String="", val effectiveFrom:String="", val effectiveTo:String="",
+    val note:String=""
 )
 data class ShiftOption(
     val shiftId:String="", val shiftCode:String="", val shiftName:String="", val shiftType:String="",
     val startTime:String="", val endTime:String=""
 )
-data class ShiftResult(val rows:List<ShiftRow> = emptyList(), val shifts:List<ShiftOption> = emptyList())
+data class ShiftEmployee(
+    val userId:String="", val employeeId:String="", val name:String="", val department:String="", val designation:String=""
+)
+data class ShiftResult(
+    val rows:List<ShiftRow> = emptyList(),
+    val shifts:List<ShiftOption> = emptyList(),
+    val employees:List<ShiftEmployee> = emptyList()
+)
 data class ProfileData(
     val userId:String="", val employeeId:String="", val name:String="", val email:String="", val phone:String="",
     val department:String="", val designation:String="", val role:String="", val isManager:Boolean=false,
@@ -94,14 +104,22 @@ object ApiClient {
 
     private fun parseUser(o:JsonObject)=User(s(o,"userId"),s(o,"employeeId"),s(o,"name"),s(o,"department"),s(o,"designation"),s(o,"effectiveRole").ifBlank{"Employee"},b(o,"isManager"),s(o,"profilePhotoUrl"))
     private fun parseTask(o:JsonObject)=TaskItem(s(o,"taskId"),s(o,"instanceId"),s(o,"title"),s(o,"category"),s(o,"department"),s(o,"employeeName"),s(o,"employeeId"),s(o,"dueDate"),s(o,"frequency"),s(o,"status").ifBlank{"Pending"},b(o,"proofRequired"),b(o,"canComplete"),b(o,"canTransfer"))
-    private fun parseTicket(o:JsonObject)=TicketItem(s(o,"ticketId"),s(o,"description"),s(o,"department"),s(o,"category"),s(o,"urgency"),s(o,"status"),s(o,"raisedByName"),s(o,"raisedByEmployeeId"),s(o,"assignedToName"),s(o,"createdOn"),s(o,"dueDate"),b(o,"isCreatedByMe"),b(o,"isAssignedToMe"),b(o,"isOverdue"))
+    private fun parseTicket(o:JsonObject)=TicketItem(
+        s(o,"ticketId"),s(o,"description"),s(o,"department"),s(o,"category"),s(o,"urgency"),s(o,"status"),
+        s(o,"raisedByName"),s(o,"raisedByEmployeeId"),s(o,"assignedToName"),s(o,"assignedToEmployeeId"),
+        s(o,"createdOn"),s(o,"dueDate"),b(o,"isCreatedByMe"),b(o,"isAssignedToMe"),
+        b(o,"isCreatedByTeam"),b(o,"isAssignedToTeam"),b(o,"isOverdue")
+    )
     private fun parseShiftOption(o:JsonObject)=ShiftOption(
         s(o,"ShiftID"),s(o,"ShiftCode"),s(o,"ShiftName"),s(o,"ShiftType"),s(o,"StartTime"),s(o,"EndTime")
     )
     private fun parseShift(o:JsonObject)=ShiftRow(
         s(o,"RosterID"),s(o,"UserID"),s(o,"EmployeeID"),s(o,"EmployeeName"),
         s(o,"Department"),s(o,"Designation"),s(o,"ShiftID"),s(o,"ShiftCode"),s(o,"ShiftName"),
-        s(o,"ShiftType"),s(o,"StartTime"),s(o,"EndTime"),s(o,"EffectiveFrom"),s(o,"EffectiveTo")
+        s(o,"ShiftType"),s(o,"StartTime"),s(o,"EndTime"),s(o,"EffectiveFrom"),s(o,"EffectiveTo"),s(o,"Note")
+    )
+    private fun parseShiftEmployee(o:JsonObject)=ShiftEmployee(
+        s(o,"UserID"),s(o,"EmployeeID"),s(o,"Name"),s(o,"Department"),s(o,"Designation")
     )
 
     suspend fun login(employeeId:String,password:String):LoginResult{
@@ -116,12 +134,24 @@ object ApiClient {
 
     suspend fun bootstrap(token:String):BootstrapData{
         val d=jo(call("bootstrap",token),"data")
+        d.get("taskBundle")?.takeIf{it.isJsonObject}?.asJsonObject?.let{ cacheTaskBundle(token,it) }
         return BootstrapData(
             parseUser(jo(d,"user")),
             b(d,"canViewTeamTasks"),b(d,"canViewTeamTickets"),b(d,"canManageTeamShifts"),
             arr(d,"departments").map{it.asString},arr(d,"ticketCategories").map{it.asString},
             arr(d,"priorities").map{it.asString},i(d,"unreadCount")
         )
+    }
+
+    private fun cacheTaskBundle(token:String,d:JsonObject){
+        val tabs=jo(d,"tabs")
+        val counts=mutableMapOf<String,Int>()
+        d.get("counts")?.takeIf{it.isJsonObject}?.asJsonObject?.entrySet()?.forEach{counts[it.key]=it.value.asInt}
+        val now=System.currentTimeMillis()
+        listOf("today","upcoming","overdue","notdone","onleave","completed").forEach { tab ->
+            val list=arr(tabs,tab).map{parseTask(it.asJsonObject)}
+            taskCache["$token|MY|$tab"]=CacheEntry(now,TaskResult(list,counts))
+        }
     }
 
     suspend fun dashboard(token:String):DashboardData=DashboardData(jo(call("dashboard",token),"data"))
@@ -141,14 +171,7 @@ object ApiClient {
     suspend fun prefetchTaskBundle(token:String){
         runCatching {
             val d=jo(call("get_task_bundle",token),"data")
-            val tabs=jo(d,"tabs")
-            val counts=mutableMapOf<String,Int>()
-            d.get("counts")?.takeIf{it.isJsonObject}?.asJsonObject?.entrySet()?.forEach{counts[it.key]=it.value.asInt}
-            val now=System.currentTimeMillis()
-            listOf("today","upcoming","overdue","notdone","onleave","completed").forEach { tab ->
-                val list=arr(tabs,tab).map{parseTask(it.asJsonObject)}
-                taskCache["$token|MY|$tab"]=CacheEntry(now,TaskResult(list,counts))
-            }
+            cacheTaskBundle(token,d)
         }
     }
 
@@ -182,20 +205,27 @@ object ApiClient {
         val d=jo(call(action,token),"data")
         return ShiftResult(
             arr(d,"rows").map{parseShift(it.asJsonObject)},
-            arr(d,"shifts").map{parseShiftOption(it.asJsonObject)}
+            arr(d,"shifts").map{parseShiftOption(it.asJsonObject)},
+            arr(d,"employees").map{parseShiftEmployee(it.asJsonObject)}
         )
     }
 
-    suspend fun saveShiftRoster(token:String,row:ShiftRow,shiftId:String){
-        val from=row.effectiveFrom.take(10)
-        val to=row.effectiveTo.take(10)
+    suspend fun saveShiftRoster(
+        token:String,
+        rosterId:String,
+        userId:String,
+        shiftId:String,
+        effectiveFrom:String,
+        effectiveTo:String,
+        note:String
+    ){
         val input=JsonObject().apply{
-            addProperty("RosterID",row.rosterId)
-            addProperty("UserID",row.userId)
+            addProperty("RosterID",rosterId)
+            addProperty("UserID",userId)
             addProperty("ShiftID",shiftId)
-            addProperty("EffectiveFrom",from)
-            addProperty("EffectiveTo",to)
-            addProperty("Note","Changed from LPPL PMS Android")
+            addProperty("EffectiveFrom",effectiveFrom)
+            addProperty("EffectiveTo",effectiveTo)
+            addProperty("Note",note)
         }
         val p=JsonObject().apply{add("input",input)}
         call("save_shift_roster",token,p)

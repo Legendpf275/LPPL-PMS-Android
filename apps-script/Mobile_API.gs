@@ -75,7 +75,15 @@ function mobileBootstrap_(token) {
     unreadCount:Number(d.unreadNotificationCount || 0),
     companyName:d.companyName || 'Legend Polyfoams Pvt. Ltd.',
     appName:d.appName || APP_NAME,
-    version:d.version || APP_VERSION
+    version:d.version || APP_VERSION,
+    taskBundle:(function(){
+      try {
+        const bundle = mobileTaskBundle_(token);
+        return bundle && bundle.success ? bundle.data : null;
+      } catch (ignored) {
+        return null;
+      }
+    })()
   }};
 }
 
@@ -170,16 +178,28 @@ function mobileTickets_(token) {
   const r = api_getMyTickets(token);
   if (!r || r.ok === false) return { success:false, error:r && r.error ? r.error : 'Unable to load help tickets.' };
   const d = r.data || {};
+  const me = requireSession_(token, null);
+  const scope = getAccessScopeV40_(me);
+  const scopedUsers = getScopedActiveUsersV40_(me, scope);
+  const teamIds = {};
+  scopedUsers.forEach(u => {
+    const id = String(u.UserID || '');
+    if (id && id !== String(me.UserID || '')) teamIds[id] = true;
+  });
   return { success:true, data:{
-    mine:(d.mine || []).map(mobileTicket_),
-    team:(d.team || []).map(mobileTicket_),
+    mine:(d.mine || []).map(t => mobileTicket_(t, teamIds)),
+    team:(d.team || []).map(t => mobileTicket_(t, teamIds)),
     canViewTeam:!!d.canViewTeam,
     ticketUsers:d.ticketUsers || []
   }};
 }
 
-function mobileTicket_(t) {
+
+function mobileTicket_(t, teamIds) {
   t = t || {};
+  teamIds = teamIds || {};
+  const creatorId = String(t.CreatedByUserID || '');
+  const assigneeId = String(t.AssignedToUserID || '');
   return {
     ticketId:String(t.TicketID || ''),
     description:String(t.Description || ''),
@@ -190,10 +210,13 @@ function mobileTicket_(t) {
     raisedByName:String(t.CreatedByName || ''),
     raisedByEmployeeId:String(t.CreatedByEmployeeID || ''),
     assignedToName:String(t.AssignedToName || ''),
+    assignedToEmployeeId:String(t.AssignedEmployeeID || ''),
     createdOn:t.CreatedOn || '',
     dueDate:t.DueDate || '',
     isCreatedByMe:!!t.IsCreatedByMe,
     isAssignedToMe:!!t.IsAssignedToMe,
+    isCreatedByTeam:!!teamIds[creatorId],
+    isAssignedToTeam:!!teamIds[assigneeId],
     isOverdue:!!t.IsOverdue
   };
 }

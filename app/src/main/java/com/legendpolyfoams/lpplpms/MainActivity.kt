@@ -9,6 +9,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -302,44 +303,45 @@ private fun TopBar(page:Page,user:User,profile:ProfileData?,unread:Int,onBell:()
         Page.ALERTS->"Notifications"
         Page.MORE->"More"
     }
+    val initials=user.name.trim().split(Regex("\\s+")).mapNotNull{it.firstOrNull()?.uppercaseChar()?.toString()}.take(2).joinToString("").ifBlank{"U"}
     TopAppBar(
         title={
             Row(verticalAlignment=Alignment.CenterVertically){
-                Surface(modifier=Modifier.size(34.dp),shape=RoundedCornerShape(8.dp),color=LpplGreen){
+                Surface(modifier=Modifier.size(34.dp),shape=RoundedCornerShape(8.dp),color=Color.White){
                     Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){
                         Column(horizontalAlignment=Alignment.CenterHorizontally){
-                            Text("LPPL",fontSize=9.sp,fontWeight=FontWeight.Black,color=Color.White)
-                            Text("PMS",fontSize=7.sp,fontWeight=FontWeight.Bold,color=Color.White)
+                            Text("LPPL",fontSize=9.sp,fontWeight=FontWeight.Black,color=LpplGreen)
+                            Text("PMS",fontSize=7.sp,fontWeight=FontWeight.Bold,color=LpplDark)
                         }
                     }
                 }
                 Spacer(Modifier.width(9.dp))
                 Column{
-                    Text(title,fontWeight=FontWeight.Black,fontSize=17.sp,color=Color(0xFF0D1B2A))
-                    Text("Legend Polyfoams",fontSize=9.sp,color=Color(0xFF64748B))
+                    Text(title,fontWeight=FontWeight.Black,fontSize=17.sp,color=Color.White)
+                    Text("Legend Polyfoams",fontSize=9.sp,color=Color(0xFFE5F6E9))
                 }
             }
         },
         actions={
             IconButton(onClick=onBell){
                 BadgedBox(badge={if(unread>0) Badge(containerColor=Color(0xFFE60023)){Text(if(unread>99)"99+" else unread.toString(),color=Color.White)}}){
-                    Icon(Icons.Default.Notifications,"Notifications",tint=Color(0xFF26364A))
+                    Icon(Icons.Default.Notifications,"Notifications",tint=Color.White)
                 }
             }
             Surface(
                 modifier=Modifier.padding(end=10.dp),
                 shape=RoundedCornerShape(24.dp),
-                color=Color(0xFFE9FFF0),
-                border=androidx.compose.foundation.BorderStroke(1.dp,Color(0xFF7EE6A2))
+                color=Color(0xFF238F3A),
+                border=androidx.compose.foundation.BorderStroke(1.dp,Color(0xFF86E49B))
             ){
                 Row(Modifier.padding(horizontal=8.dp,vertical=5.dp),verticalAlignment=Alignment.CenterVertically){
-                    ProfileAvatar(profile?.profilePhotoDataUri.orEmpty(),user.name,24.dp)
-                    Spacer(Modifier.width(5.dp))
-                    Text(user.effectiveRole,fontSize=10.sp,color=Color(0xFF16813A),fontWeight=FontWeight.SemiBold)
+                    ProfileAvatar(profile?.profilePhotoDataUri.orEmpty(),user.name,26.dp)
+                    Spacer(Modifier.width(6.dp))
+                    Text(initials,fontSize=11.sp,color=Color.White,fontWeight=FontWeight.Black)
                 }
             }
         },
-        colors=TopAppBarDefaults.topAppBarColors(containerColor=Color.White)
+        colors=TopAppBarDefaults.topAppBarColors(containerColor=LpplGreen)
     )
 }
 
@@ -581,7 +583,7 @@ private fun TasksScreen(token:String,boot:BootstrapData,initialTab:String="today
 
     Column(Modifier.fillMaxSize().background(Color(0xFFF7FAF8))){
         if(boot.canViewTeamTasks) Segmented(listOf("MY" to "My","TEAM" to "Team"),scopeSel){scopeSel=it;result=null}
-        TaskTabs(tab){tab=it;result=null}
+        TaskTabs(tab,result?.counts ?: emptyMap()){tab=it;result=null}
         if(err.isNotBlank()) ErrorCard(err)
         val list=result?.tasks
         if(list==null){
@@ -612,7 +614,7 @@ private fun TasksScreen(token:String,boot:BootstrapData,initialTab:String="today
         } else {
             LazyColumn(Modifier.fillMaxSize().padding(horizontal=10.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
                 items(list,key={it.instanceId}){task->
-                    TaskRow(task,busyId==task.instanceId,onDone={
+                    TaskRow(task,scopeSel=="TEAM",busyId==task.instanceId,onDone={
                         busyId=task.instanceId
                         scope.launch{
                             runCatching{ApiClient.completeTask(token,task.instanceId)}
@@ -632,7 +634,12 @@ private fun TasksScreen(token:String,boot:BootstrapData,initialTab:String="today
 }
 
 @Composable
-private fun TaskTabs(selected:String,onSelect:(String)->Unit){
+private fun TaskTabs(selected:String,counts:Map<String,Int>,onSelect:(String)->Unit){
+    fun countFor(key:String):Int = when(key){
+        "notdone" -> counts["notdone"] ?: counts["notDone"] ?: 0
+        "onleave" -> counts["onleave"] ?: counts["onLeave"] ?: 0
+        else -> counts[key] ?: 0
+    }
     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(10.dp),horizontalArrangement=Arrangement.spacedBy(7.dp)){
         listOf(
             "today" to "Today","upcoming" to "Upcoming","overdue" to "Overdue",
@@ -641,7 +648,7 @@ private fun TaskTabs(selected:String,onSelect:(String)->Unit){
             FilterChip(
                 selected=selected==k,
                 onClick={onSelect(k)},
-                label={Text(l,fontSize=10.sp,fontWeight=if(selected==k)FontWeight.Bold else FontWeight.Medium)},
+                label={Text(l+" "+countFor(k),fontSize=10.sp,fontWeight=if(selected==k)FontWeight.Bold else FontWeight.Medium)},
                 colors=FilterChipDefaults.filterChipColors(
                     selectedContainerColor=Color(0xFFE7F8EB),
                     selectedLabelColor=Color(0xFF0C7C35),
@@ -660,40 +667,58 @@ private fun TaskTabs(selected:String,onSelect:(String)->Unit){
 }
 
 @Composable
-private fun TaskRow(t:TaskItem,busy:Boolean,onDone:()->Unit){
+private fun TaskRow(t:TaskItem,isTeam:Boolean,busy:Boolean,onDone:()->Unit){
     Card(
         Modifier.fillMaxWidth(),
-        shape=RoundedCornerShape(13.dp),
+        shape=RoundedCornerShape(12.dp),
         colors=CardDefaults.cardColors(containerColor=Color.White),
         border=androidx.compose.foundation.BorderStroke(
             1.dp,
             if(t.status.equals("Overdue",true)) Color(0xFFFFB2B2) else Color(0xFFDCE5EA)
         )
     ){
-        Column(Modifier.padding(11.dp)){
+        Column(Modifier.padding(horizontal=12.dp,vertical=10.dp)){
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){
                 Row(verticalAlignment=Alignment.CenterVertically){
-                    Text(t.taskId,fontWeight=FontWeight.Bold,fontSize=12.sp,color=LpplDark)
-                    Spacer(Modifier.width(6.dp))
-                    AssistChip(onClick={},label={Text(t.frequency.ifBlank{"TASK"},fontSize=10.sp)})
+                    Text(t.taskId,fontWeight=FontWeight.Black,fontSize=12.sp,color=Color(0xFF078A37))
+                    if(t.frequency.isNotBlank()){
+                        Spacer(Modifier.width(5.dp))
+                        Surface(shape=RoundedCornerShape(4.dp),color=Color(0xFFEAF3FF),border=androidx.compose.foundation.BorderStroke(1.dp,Color(0xFFB8D4FF))){
+                            Text(t.frequency,Modifier.padding(horizontal=5.dp,vertical=2.dp),fontSize=9.sp,color=Color(0xFF246BFD))
+                        }
+                    }
+                    if(t.proofRequired){
+                        Spacer(Modifier.width(5.dp))
+                        Surface(shape=RoundedCornerShape(4.dp),color=Color(0xFFE9FAF0)){
+                            Row(Modifier.padding(horizontal=5.dp,vertical=2.dp),verticalAlignment=Alignment.CenterVertically){
+                                Icon(Icons.Default.AttachFile,null,tint=Color(0xFF16813A),modifier=Modifier.size(10.dp))
+                                Text("Proof",fontSize=8.sp,color=Color(0xFF16813A))
+                            }
+                        }
+                    }
                 }
                 StatusChip(t.status)
             }
-            Text(t.title,fontWeight=FontWeight.SemiBold,fontSize=14.sp,maxLines=2,overflow=TextOverflow.Ellipsis,color=TextPrimary)
-            Spacer(Modifier.height(5.dp))
-            Text(
-                listOf(t.dueDate,t.category,if(t.employeeName.isNotBlank())t.employeeName else "").filter{it.isNotBlank()}.joinToString(" • "),
-                fontSize=11.sp,color=TextMuted,maxLines=1,overflow=TextOverflow.Ellipsis
-            )
-            if(t.canComplete && t.status.lowercase()!="completed"){
-                Spacer(Modifier.height(7.dp))
-                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.End){
-                    Button(onClick=onDone,enabled=!busy,contentPadding=PaddingValues(horizontal=12.dp),modifier=Modifier.height(34.dp)){
-                        if(busy) CircularProgressIndicator(Modifier.size(16.dp),strokeWidth=2.dp,color=Color.White)
+            Spacer(Modifier.height(7.dp))
+            Text(t.title,fontWeight=FontWeight.SemiBold,fontSize=13.sp,maxLines=2,overflow=TextOverflow.Ellipsis,color=Color(0xFF0E1F31))
+            Spacer(Modifier.height(9.dp))
+            HorizontalDivider(color=Color(0xFFE9EEF2))
+            Spacer(Modifier.height(7.dp))
+            Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){
+                val meta=listOf(t.category,if(isTeam)t.employeeName else "").filter{it.isNotBlank()}.joinToString(" • ")
+                Text(meta.ifBlank{t.department},fontSize=10.sp,color=Color(0xFF60758B),modifier=Modifier.weight(1f),maxLines=1,overflow=TextOverflow.Ellipsis)
+                if(t.canComplete && !t.status.equals("completed",true)){
+                    Button(
+                        onClick=onDone,enabled=!busy,
+                        contentPadding=PaddingValues(horizontal=10.dp,vertical=0.dp),
+                        modifier=Modifier.height(30.dp),
+                        shape=RoundedCornerShape(6.dp)
+                    ){
+                        if(busy) CircularProgressIndicator(Modifier.size(14.dp),strokeWidth=2.dp,color=Color.White)
                         else {
-                            Icon(Icons.Default.CheckCircle,null,Modifier.size(16.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text("Mark Done",fontSize=12.sp)
+                            Icon(Icons.Default.CheckCircle,null,Modifier.size(13.dp))
+                            Spacer(Modifier.width(3.dp))
+                            Text("Mark Done",fontSize=10.sp)
                         }
                     }
                 }
@@ -705,12 +730,14 @@ private fun TaskRow(t:TaskItem,busy:Boolean,onDone:()->Unit){
 @Composable
 private fun TicketsScreen(token:String,boot:BootstrapData){
     var scopeSel by remember{mutableStateOf("MY")}
+    var ownerSel by remember{mutableStateOf("CREATED")}
     var data by remember{mutableStateOf<TicketResult?>(null)}
     var status by remember{mutableStateOf("ALL")}
     var filtersOpen by remember{mutableStateOf(false)}
     var department by remember{mutableStateOf("ALL")}
     var category by remember{mutableStateOf("ALL")}
     var urgency by remember{mutableStateOf("ALL")}
+    var selectedTicket by remember{mutableStateOf<TicketItem?>(null)}
     var err by remember{mutableStateOf("")}
 
     LaunchedEffect(Unit){
@@ -722,23 +749,51 @@ private fun TicketsScreen(token:String,boot:BootstrapData){
     val categories=(boot.ticketCategories + (source?.map{it.category} ?: emptyList())).filter{it.isNotBlank()}.distinct().sorted()
     val urgencies=(boot.priorities + (source?.map{it.urgency} ?: emptyList())).filter{it.isNotBlank()}.distinct().sorted()
     val list=source?.filter{
-        val statusOk=status=="ALL" || it.status.uppercase()==status || (status=="OPEN" && it.status.uppercase() in listOf("OPEN","ASSIGNED"))
+        val ownerOk=if(scopeSel=="TEAM"){
+            if(ownerSel=="CREATED") it.isCreatedByTeam else it.isAssignedToTeam
+        }else{
+            if(ownerSel=="CREATED") it.isCreatedByMe else it.isAssignedToMe
+        }
+        val s=it.status.uppercase()
+        val statusOk=when(status){
+            "OPEN" -> s in listOf("OPEN","ASSIGNED")
+            "IN PROGRESS" -> s=="IN PROGRESS"
+            "ARCHIVE" -> s in listOf("ARCHIVE","ARCHIVED")
+            "CLOSED" -> s in listOf("RESOLVED","CLOSED")
+            else -> true
+        }
         val deptOk=department=="ALL" || it.department==department
         val catOk=category=="ALL" || it.category==category
         val urgOk=urgency=="ALL" || it.urgency==urgency
-        statusOk && deptOk && catOk && urgOk
+        ownerOk && statusOk && deptOk && catOk && urgOk
     }
 
     Box(Modifier.fillMaxSize().background(Color(0xFFF7FAF8))){
         Column(Modifier.fillMaxSize()){
-            if(boot.canViewTeamTickets) Segmented(listOf("MY" to "My","TEAM" to "Team"),scopeSel){scopeSel=it}
-            Row(Modifier.fillMaxWidth().padding(horizontal=10.dp,vertical=6.dp),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){
+            if(boot.canViewTeamTickets){
+                Segmented(listOf("MY" to "My","TEAM" to "Team"),scopeSel){
+                    scopeSel=it;ownerSel="CREATED"
+                }
+            }
+            Row(Modifier.fillMaxWidth().padding(horizontal=10.dp,vertical=3.dp),horizontalArrangement=Arrangement.spacedBy(7.dp)){
+                FilterChip(
+                    selected=ownerSel=="CREATED",
+                    onClick={ownerSel="CREATED"},
+                    label={Text(if(scopeSel=="TEAM")"Created by Team" else "Created by Me",fontSize=10.sp)}
+                )
+                FilterChip(
+                    selected=ownerSel=="ASSIGNED",
+                    onClick={ownerSel="ASSIGNED"},
+                    label={Text(if(scopeSel=="TEAM")"Assigned to Team" else "Assigned to Me",fontSize=10.sp)}
+                )
+            }
+            Row(Modifier.fillMaxWidth().padding(horizontal=10.dp,vertical=4.dp),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){
                 Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(6.dp)){
-                    listOf("ALL","OPEN","IN PROGRESS","WAITING","RESOLVED","CLOSED").forEach{s->
+                    listOf("ALL","OPEN","IN PROGRESS","ARCHIVE","CLOSED").forEach{s->
                         FilterChip(
                             selected=status==s,
                             onClick={status=s},
-                            label={Text(s.lowercase().replaceFirstChar{it.uppercase()},fontSize=11.sp)},
+                            label={Text(s.lowercase().replaceFirstChar{it.uppercase()},fontSize=10.sp)},
                             colors=FilterChipDefaults.filterChipColors(selectedContainerColor=Color(0xFFE9E0FF),selectedLabelColor=Color(0xFF44227A))
                         )
                     }
@@ -784,10 +839,11 @@ private fun TicketsScreen(token:String,boot:BootstrapData){
                     verticalArrangement=Arrangement.spacedBy(8.dp),
                     contentPadding=PaddingValues(bottom=90.dp)
                 ){
-                    items(list,key={it.ticketId}){TicketRow(it)}
+                    items(list,key={it.ticketId}){TicketRow(it){selectedTicket=it}}
                 }
             }
         }
+
         FloatingActionButton(
             onClick={},
             containerColor=Color(0xFF31B84B),
@@ -795,6 +851,31 @@ private fun TicketsScreen(token:String,boot:BootstrapData){
             modifier=Modifier.align(Alignment.BottomEnd).padding(16.dp),
             shape=RoundedCornerShape(16.dp)
         ){Icon(Icons.Default.Add,"New Ticket")}
+
+        selectedTicket?.let{t->
+            AlertDialog(
+                onDismissRequest={selectedTicket=null},
+                title={
+                    Column{
+                        Text(t.ticketId,fontWeight=FontWeight.Black,fontSize=15.sp,color=LpplDark)
+                        StatusChip(if(t.status.equals("Resolved",true))"Closed" else t.status)
+                    }
+                },
+                text={
+                    Column(Modifier.verticalScroll(rememberScrollState())){
+                        Text(t.description,fontWeight=FontWeight.SemiBold,fontSize=15.sp,color=Color(0xFF102033))
+                        Spacer(Modifier.height(12.dp))
+                        SettingLine("Department",t.department)
+                        SettingLine("Category",t.category)
+                        SettingLine("Urgency",t.urgency)
+                        SettingLine("Created by",listOf(t.raisedByEmployeeId,t.raisedByName).filter{it.isNotBlank()}.joinToString(" · "))
+                        SettingLine("Assigned to",listOf(t.assignedToEmployeeId,t.assignedToName).filter{it.isNotBlank()}.joinToString(" · ").ifBlank{"Unassigned"})
+                        if(t.dueDate.isNotBlank()) SettingLine("Due date",t.dueDate)
+                    }
+                },
+                confirmButton={TextButton(onClick={selectedTicket=null}){Text("Close")}}
+            )
+        }
     }
 }
 
@@ -813,25 +894,27 @@ private fun TicketFilterRow(label:String,options:List<String>,selected:String,on
 }
 
 @Composable
-private fun TicketRow(t:TicketItem){
+private fun TicketRow(t:TicketItem,onClick:()->Unit){
+    val shownStatus=if(t.status.equals("Resolved",true))"Closed" else t.status
     Card(
-        Modifier.fillMaxWidth(),
+        Modifier.fillMaxWidth().clickable(onClick=onClick),
         shape=RoundedCornerShape(13.dp),
         colors=CardDefaults.cardColors(containerColor=Color.White),
         border=androidx.compose.foundation.BorderStroke(1.dp,Color(0xFFDDE6EC))
     ){
         Column(Modifier.padding(11.dp)){
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){
-                StatusChip(t.status)
+                StatusChip(shownStatus)
                 Text(t.ticketId,fontSize=11.sp,fontWeight=FontWeight.Bold,color=TextMuted)
             }
             Spacer(Modifier.height(5.dp))
             Text(t.description,fontSize=14.sp,fontWeight=FontWeight.SemiBold,maxLines=2,overflow=TextOverflow.Ellipsis)
             Spacer(Modifier.height(5.dp))
-            Text("${t.department} • ${t.category} • ${t.urgency}",fontSize=11.sp,color=TextMuted)
+            Text(listOf(t.department,t.category,t.urgency).filter{it.isNotBlank()}.joinToString(" • "),fontSize=11.sp,color=TextMuted)
+            Spacer(Modifier.height(4.dp))
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){
-                Text("By ${t.raisedByName}",fontSize=11.sp,color=TextMuted,maxLines=1,overflow=TextOverflow.Ellipsis,modifier=Modifier.weight(1f))
-                Text(t.dueDate,fontSize=11.sp,color=if(t.isOverdue)Color.Red else TextMuted)
+                Text("By "+t.raisedByName,fontSize=11.sp,color=TextMuted,maxLines=1,overflow=TextOverflow.Ellipsis,modifier=Modifier.weight(1f))
+                Icon(Icons.Default.ChevronRight,null,tint=Color(0xFF93A1B1),modifier=Modifier.size(17.dp))
             }
         }
     }
@@ -874,9 +957,22 @@ private fun ShiftRosterScreen(token:String,boot:BootstrapData){
     var err by remember{mutableStateOf("")}
     var reloadKey by remember{mutableStateOf(0)}
     var editRow by remember{mutableStateOf<ShiftRow?>(null)}
+    var selectedUserId by remember{mutableStateOf("")}
+    var selectedShiftType by remember{mutableStateOf("")}
     var selectedShiftId by remember{mutableStateOf("")}
+    var fromDate by remember{mutableStateOf("")}
+    var toDate by remember{mutableStateOf("")}
+    var note by remember{mutableStateOf("")}
     var saving by remember{mutableStateOf(false)}
     val scope=rememberCoroutineScope()
+
+    fun displayDate(value:String):String{
+        val raw=value.take(10)
+        return runCatching{LocalDate.parse(raw).format(DateTimeFormatter.ofPattern("dd-MM-yyyy"))}.getOrElse{raw}
+    }
+    fun serverDate(value:String):String{
+        return runCatching{LocalDate.parse(value,DateTimeFormatter.ofPattern("dd-MM-yyyy")).toString()}.getOrElse{value.take(10)}
+    }
 
     LaunchedEffect(reloadKey){
         err=""
@@ -897,18 +993,18 @@ private fun ShiftRosterScreen(token:String,boot:BootstrapData){
                     shape=RoundedCornerShape(15.dp)
                 ){
                     Row(Modifier.padding(13.dp),verticalAlignment=Alignment.CenterVertically){
-                        Icon(Icons.Default.CalendarMonth,null,tint=LpplGreen,modifier=Modifier.size(20.dp))
+                        Icon(Icons.Default.CalendarMonth,null,tint=LpplGreen,modifier=Modifier.size(22.dp))
                         Spacer(Modifier.width(9.dp))
                         Column{
-                            Text("LPPL Operational Shift Roster",fontSize=13.sp,fontWeight=FontWeight.Black,color=Color(0xFF0E6F31))
-                            Text(if(boot.canManageTeamShifts)"Direct-report team shift schedule" else "Your current assigned shift",fontSize=10.sp,color=Color(0xFF65758B))
+                            Text("LPPL Operational Shift Roster",fontSize=14.sp,fontWeight=FontWeight.Black,color=Color(0xFF0E6F31))
+                            Text(if(boot.canManageTeamShifts)"Direct-report team shift schedule" else "Your current assigned shift",fontSize=11.sp,color=Color(0xFF65758B))
                         }
                     }
                 }
             }
 
             item{
-                Text(if(boot.canManageTeamShifts)"TEAM SHIFT ROSTER" else "MY ASSIGNED SHIFT",fontSize=11.sp,fontWeight=FontWeight.Black,color=Color(0xFF172A3A))
+                Text(if(boot.canManageTeamShifts)"TEAM SHIFT ROSTER" else "MY ASSIGNED SHIFT",fontSize=12.sp,fontWeight=FontWeight.Black,color=Color(0xFF172A3A))
             }
 
             if(err.isNotBlank()){
@@ -916,16 +1012,7 @@ private fun ShiftRosterScreen(token:String,boot:BootstrapData){
             } else if(data==null){
                 item{LinearProgressIndicator(Modifier.fillMaxWidth(),color=LpplGreen)}
             } else if(data!!.rows.isEmpty()){
-                item{
-                    Card(colors=CardDefaults.cardColors(containerColor=Color.White),shape=RoundedCornerShape(13.dp)){
-                        Column(Modifier.fillMaxWidth().padding(18.dp),horizontalAlignment=Alignment.CenterHorizontally){
-                            Icon(Icons.Default.EventBusy,null,tint=Color(0xFF8290A3),modifier=Modifier.size(30.dp))
-                            Spacer(Modifier.height(8.dp))
-                            Text("No active shift assignment found",fontWeight=FontWeight.Bold,color=Color(0xFF33475B))
-                            Text("Contact your reporting manager if a shift should be assigned.",fontSize=10.sp,color=Color(0xFF8290A3))
-                        }
-                    }
-                }
+                item{EmptyState("No active shift assignment found")}
             } else {
                 items(data!!.rows,key={it.rosterId.ifBlank{it.employeeId+it.shiftCode}}){row->
                     Card(
@@ -934,36 +1021,44 @@ private fun ShiftRosterScreen(token:String,boot:BootstrapData){
                         shape=RoundedCornerShape(13.dp)
                     ){
                         Row(
-                            Modifier.fillMaxWidth().padding(12.dp),
+                            Modifier.fillMaxWidth().padding(14.dp),
                             horizontalArrangement=Arrangement.SpaceBetween,
                             verticalAlignment=Alignment.CenterVertically
                         ){
                             Column(Modifier.weight(1f)){
                                 Row(verticalAlignment=Alignment.CenterVertically){
-                                    Text(row.employeeName.ifBlank{boot.user.name},fontWeight=FontWeight.Black,fontSize=13.sp,color=Color(0xFF102033))
+                                    Text(row.employeeName.ifBlank{boot.user.name},fontWeight=FontWeight.Black,fontSize=17.sp,color=Color(0xFF102033))
                                     if(row.employeeId.isNotBlank()){
-                                        Spacer(Modifier.width(6.dp))
-                                        Surface(shape=RoundedCornerShape(4.dp),color=Color(0xFFF0F5F8)){
-                                            Text(row.employeeId,Modifier.padding(horizontal=5.dp,vertical=2.dp),fontSize=8.sp,color=Color(0xFF53657D))
+                                        Spacer(Modifier.width(8.dp))
+                                        Surface(shape=RoundedCornerShape(6.dp),color=Color(0xFFE5F8EA),border=androidx.compose.foundation.BorderStroke(1.dp,Color(0xFF70D68B))){
+                                            Text(row.employeeId,Modifier.padding(horizontal=8.dp,vertical=4.dp),fontSize=10.sp,fontWeight=FontWeight.Bold,color=Color(0xFF16813A))
                                         }
                                     }
                                 }
-                                Spacer(Modifier.height(3.dp))
-                                Text(listOf(row.department,row.shiftType.ifBlank{row.shiftName}).filter{it.isNotBlank()}.joinToString(" • "),fontSize=10.sp,color=Color(0xFF52718C))
+                                Spacer(Modifier.height(6.dp))
+                                Text(listOf(row.department,row.shiftType.ifBlank{row.shiftName}).filter{it.isNotBlank()}.joinToString(" • "),fontSize=12.sp,color=Color(0xFF52718C))
                                 if(row.startTime.isNotBlank() || row.endTime.isNotBlank()){
-                                    Spacer(Modifier.height(3.dp))
-                                    Text(row.startTime+" - "+row.endTime+"  ("+row.shiftCode+")",fontSize=9.sp,color=Color(0xFF6F83A0))
+                                    Spacer(Modifier.height(6.dp))
+                                    Text(row.startTime+" - "+row.endTime+"  ("+row.shiftCode+")",fontSize=13.sp,fontWeight=FontWeight.SemiBold,color=Color(0xFF405A73))
                                 }
                             }
                             if(boot.canManageTeamShifts){
                                 Button(
-                                    onClick={editRow=row;selectedShiftId=row.shiftId},
+                                    onClick={
+                                        editRow=row
+                                        selectedUserId=row.userId
+                                        selectedShiftType=row.shiftType
+                                        selectedShiftId=row.shiftId
+                                        fromDate=displayDate(row.effectiveFrom)
+                                        toDate=displayDate(row.effectiveTo)
+                                        note=row.note
+                                    },
                                     shape=RoundedCornerShape(8.dp),
-                                    contentPadding=PaddingValues(horizontal=10.dp,vertical=4.dp)
+                                    contentPadding=PaddingValues(horizontal=10.dp,vertical=5.dp)
                                 ){
                                     Icon(Icons.Default.Edit,null,Modifier.size(14.dp))
                                     Spacer(Modifier.width(4.dp))
-                                    Text("Change Shift",fontSize=9.sp)
+                                    Text("Change Shift",fontSize=10.sp)
                                 }
                             }
                         }
@@ -973,48 +1068,89 @@ private fun ShiftRosterScreen(token:String,boot:BootstrapData){
         }
 
         val row=editRow
-        if(row!=null){
+        if(row!=null && data!=null){
+            val employeeOptions=(data!!.employees.ifEmpty{
+                data!!.rows.map{ShiftEmployee(it.userId,it.employeeId,it.employeeName,it.department,it.designation)}.distinctBy{it.userId}
+            })
+            val shiftTypes=data!!.shifts.map{it.shiftType}.filter{it.isNotBlank()}.distinct()
+            val shiftOptions=data!!.shifts.filter{selectedShiftType.isBlank() || it.shiftType==selectedShiftType}
             AlertDialog(
                 onDismissRequest={if(!saving)editRow=null},
-                title={Text("Change Shift - "+row.employeeName,fontWeight=FontWeight.Black)},
+                title={Text("Edit Shift Roster",fontWeight=FontWeight.Black,fontSize=20.sp)},
                 text={
-                    Column{
-                        Text("Current: "+row.shiftCode+" • "+row.startTime+"-"+row.endTime,fontSize=11.sp,color=TextMuted)
-                        Spacer(Modifier.height(10.dp))
-                        Text("Select new shift",fontSize=11.sp,fontWeight=FontWeight.Bold)
-                        Spacer(Modifier.height(6.dp))
-                        LazyColumn(Modifier.heightIn(max=320.dp),verticalArrangement=Arrangement.spacedBy(5.dp)){
-                            items(data?.shifts ?: emptyList(),key={it.shiftId}){shift->
-                                Card(
-                                    Modifier.fillMaxWidth().clickable{selectedShiftId=shift.shiftId},
-                                    colors=CardDefaults.cardColors(containerColor=if(selectedShiftId==shift.shiftId)Color(0xFFE7F8EB) else Color.White),
-                                    border=androidx.compose.foundation.BorderStroke(1.dp,if(selectedShiftId==shift.shiftId)Color(0xFF64CF86) else Color(0xFFDCE5EA))
-                                ){
-                                    Column(Modifier.padding(10.dp)){
-                                        Text(shift.shiftCode+" - "+shift.shiftName,fontWeight=FontWeight.Bold,fontSize=12.sp)
-                                        Text(shift.shiftType+" • "+shift.startTime+" - "+shift.endTime,fontSize=10.sp,color=TextMuted)
-                                    }
-                                }
+                    Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(9.dp)){
+                        SelectPopupField(
+                            label="Employee *",
+                            value=employeeOptions.find{it.userId==selectedUserId}?.let{it.employeeId+" · "+it.name+" · "+it.department}.orEmpty(),
+                            options=employeeOptions.map{it.userId to (it.employeeId+" · "+it.name+" · "+it.department)},
+                            onSelect={selectedUserId=it}
+                        )
+                        SelectPopupField(
+                            label="Shift Type *",
+                            value=selectedShiftType,
+                            options=shiftTypes.map{it to it},
+                            onSelect={
+                                selectedShiftType=it
+                                selectedShiftId=shiftOptions.firstOrNull{sh->sh.shiftType==it}?.shiftId.orEmpty()
                             }
+                        )
+                        SelectPopupField(
+                            label="Shift Format *",
+                            value=shiftOptions.find{it.shiftId==selectedShiftId}?.let{it.shiftCode+" - ("+it.shiftName+")"}.orEmpty(),
+                            options=shiftOptions.map{it.shiftId to (it.shiftCode+" - ("+it.shiftName+")")},
+                            onSelect={selectedShiftId=it}
+                        )
+                        Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
+                            OutlinedTextField(fromDate,{fromDate=it},label={Text("Effective From *")},singleLine=true,modifier=Modifier.weight(1f))
+                            OutlinedTextField(toDate,{toDate=it},label={Text("Effective To *")},singleLine=true,modifier=Modifier.weight(1f))
                         }
+                        OutlinedTextField(note,{note=it},label={Text("Note")},placeholder={Text("Rotation / coverage note")},modifier=Modifier.fillMaxWidth())
                     }
                 },
                 confirmButton={
                     Button(
-                        enabled=!saving && selectedShiftId.isNotBlank() && selectedShiftId!=row.shiftId,
+                        enabled=!saving && selectedUserId.isNotBlank() && selectedShiftId.isNotBlank() && fromDate.isNotBlank() && toDate.isNotBlank(),
                         onClick={
                             saving=true
                             scope.launch{
-                                runCatching{ApiClient.saveShiftRoster(token,row,selectedShiftId)}
-                                    .onSuccess{editRow=null;reloadKey++}
-                                    .onFailure{err=it.message?:"Unable to change shift"}
+                                runCatching{
+                                    ApiClient.saveShiftRoster(
+                                        token,row.rosterId,selectedUserId,selectedShiftId,
+                                        serverDate(fromDate),serverDate(toDate),note
+                                    )
+                                }.onSuccess{editRow=null;reloadKey++}
+                                 .onFailure{err=it.message?:"Unable to change shift"}
                                 saving=false
                             }
                         }
                     ){if(saving)CircularProgressIndicator(Modifier.size(16.dp),strokeWidth=2.dp,color=Color.White) else Text("Save Shift")}
                 },
-                dismissButton={TextButton(enabled=!saving,onClick={editRow=null}){Text("Cancel")}}
+                dismissButton={OutlinedButton(enabled=!saving,onClick={editRow=null}){Text("Cancel")}}
             )
+        }
+    }
+}
+
+@Composable
+private fun SelectPopupField(label:String,value:String,options:List<Pair<String,String>>,onSelect:(String)->Unit){
+    var open by remember{mutableStateOf(false)}
+    Column{
+        Text(label,fontSize=10.sp,fontWeight=FontWeight.SemiBold,color=Color(0xFF243746))
+        Box{
+            OutlinedButton(
+                onClick={open=true},
+                modifier=Modifier.fillMaxWidth(),
+                shape=RoundedCornerShape(7.dp),
+                contentPadding=PaddingValues(horizontal=12.dp,vertical=11.dp)
+            ){
+                Text(value.ifBlank{"Select"},Modifier.weight(1f),color=Color(0xFF102033),maxLines=1,overflow=TextOverflow.Ellipsis)
+                Icon(Icons.Default.ArrowDropDown,null)
+            }
+            DropdownMenu(expanded=open,onDismissRequest={open=false}){
+                options.forEach{(key,text)->
+                    DropdownMenuItem(text={Text(text,fontSize=12.sp)},onClick={onSelect(key);open=false})
+                }
+            }
         }
     }
 }

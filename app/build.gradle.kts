@@ -11,8 +11,8 @@ android {
         applicationId = "com.legendpolyfoams.lpplpms"
         minSdk = 26
         targetSdk = 35
-        versionCode = 103
-        versionName = "1.2.0-native"
+        versionCode = 104
+        versionName = "1.3.0-native"
         buildConfigField("String", "BASE_API_URL", "\"https://script.google.com/macros/s/AKfycbxG9BCPDBsQcrViIbJs7JTfPEvT5a4O9f8NiFwRu0Ij5JKx6PrhqQninPDZz4K2E_QO/exec\"")
     }
     buildFeatures { compose = true; buildConfig = true }
