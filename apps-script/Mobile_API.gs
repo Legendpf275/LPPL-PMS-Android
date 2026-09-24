@@ -19,12 +19,16 @@ function doPost(e) {
       case 'get_tasks': out = mobileTasks_(body); break;
       case 'get_task_bundle': out = mobileTaskBundle_(body.token); break;
       case 'complete_task': out = mobileCompleteTask_(body); break;
+      case 'get_transfer_targets': out = mobileTransferTargets_(body.token); break;
+      case 'transfer_task': out = mobileTransferTask_(body); break;
       case 'get_tickets': out = mobileTickets_(body.token); break;
       case 'create_ticket': out = mobileCreateTicket_(body); break;
       case 'ticket_messages': out = mobileData_(api_getTicketMessages(body.token, body.ticketId)); break;
       case 'add_ticket_message': out = mobileData_(api_addTicketMessage(body.token, body.ticketId, body.message)); break;
       case 'update_ticket_status': out = mobileData_(api_updateTicketStatus(body.token, body.ticketId, body.status)); break;
       case 'get_notifications': out = mobileNotifications_(body.token); break;
+      case 'get_notification_summary': out = mobileData_(api_getNotificationSummary(body.token)); break;
+      case 'mark_notification_read': out = mobileData_(api_markNotificationRead(body.token, body.notificationId)); break;
       case 'get_profile': out = mobileProfile_(body.token); break;
       case 'mark_all_notifications_read': out = mobileData_(api_markAllNotificationsRead(body.token)); break;
       case 'get_shift_roster': out = mobileData_(api_getShiftRosterV46(body.token, body.filters || {})); break;
@@ -120,7 +124,12 @@ function mobileTasks_(body) {
 
   const masters = {};
   sheetToObjects_(SHEET_NAMES.TASK_MASTER).forEach(m => masters[String(m.MasterID || '')] = m);
-  return { success:true, data:{ tasks:rows.map(row => mobileTask_(row, masters)), counts:counts } };
+  const seen = {};
+  return { success:true, data:{ tasks:rows.filter(row => {
+    const id=String(row.TaskID || '');
+    if (!id || seen[id]) return false;
+    seen[id]=true; return true;
+  }).map(row => mobileTask_(row, masters)), counts:counts } };
 }
 
 function mobileTaskBundle_(token) {
@@ -131,7 +140,12 @@ function mobileTaskBundle_(token) {
   sheetToObjects_(SHEET_NAMES.TASK_MASTER).forEach(m => masters[String(m.MasterID || '')] = m);
   const tabs = {};
   ['today','upcoming','overdue','notdone','onleave','completed'].forEach(key => {
-    tabs[key] = (d[key] || []).map(row => mobileTask_(row, masters));
+    const seen={};
+    tabs[key] = (d[key] || []).filter(row => {
+      const id=String(row.TaskID || '');
+      if (!id || seen[id]) return false;
+      seen[id]=true; return true;
+    }).map(row => mobileTask_(row, masters));
   });
   return { success:true, data:{ tabs:tabs, counts:d.counts || {} } };
 }
@@ -156,8 +170,30 @@ function mobileTask_(row, masterMap) {
     status:String(row.Status || 'Pending'),
     proofRequired:String(row.ProofRequired || 'No') === 'Yes',
     canComplete:row.CanComplete !== false,
-    canTransfer:!!row.IsTransferable
+    canTransfer:!!(row.CanTransfer || row.IsTransferable)
   };
+}
+
+function mobileTransferTargets_(token) {
+  const me=requireSession_(token,null);
+  assertTeamTaskAccessV40_(me);
+  const rows=getDirectReportUsersV46_(me,false).filter(u=>u.Status===ACTIVE_STATUS)
+    .map(u=>({userId:String(u.UserID||''),employeeId:String(u.EmployeeID||''),name:String(u.Name||'')}));
+  return {success:true,data:{rows:rows}};
+}
+
+function mobileTransferTask_(body) {
+  const me=requireSession_(body.token,null);
+  const taskId=String(body.taskId||'');
+  const task=sheetToObjects_(SHEET_NAMES.TASK_INSTANCES).find(t=>String(t.TaskID||'')===taskId);
+  if (!task) return {success:false,error:'Task not found.'};
+  const own=String(task.AssignedToUserID||'')===String(me.UserID||'');
+  if (!hasPmsRuleV44_(me,own?'TASK_TRANSFER_OWN':'TASK_TRANSFER_TEAM'))
+    return {success:false,error:'Task transfer is not allowed for your role.'};
+  return mobileData_(api_transferTeamTasksV42(body.token,{
+    mode:'assignments',date:String(body.date||''),
+    assignments:[{taskId:taskId,targetUserId:String(body.targetUserId||'')}]
+  }));
 }
 
 function mobileCompleteTask_(body) {

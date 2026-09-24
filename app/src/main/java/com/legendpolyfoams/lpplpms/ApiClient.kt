@@ -58,6 +58,7 @@ data class ProfileData(
     val department:String="", val designation:String="", val role:String="", val isManager:Boolean=false,
     val profilePhotoDataUri:String=""
 )
+data class TransferTarget(val userId:String, val employeeId:String, val name:String)
 
 class ApiException(message:String):Exception(message)
 
@@ -66,6 +67,7 @@ object ApiClient {
     private data class CacheEntry<T>(val at:Long,val value:T)
     private val taskCache=mutableMapOf<String,CacheEntry<TaskResult>>()
     private var ticketCache:CacheEntry<TicketResult>?=null
+    private var dashboardCache:CacheEntry<DashboardData>?=null
     private const val CACHE_MS=120000L
     private val client=OkHttpClient.Builder()
         .connectTimeout(25,TimeUnit.SECONDS).readTimeout(35,TimeUnit.SECONDS).writeTimeout(35,TimeUnit.SECONDS)
@@ -154,7 +156,15 @@ object ApiClient {
         }
     }
 
-    suspend fun dashboard(token:String):DashboardData=DashboardData(jo(call("dashboard",token),"data"))
+    suspend fun dashboard(token:String,force:Boolean=false):DashboardData{
+        val now=System.currentTimeMillis()
+        if(!force) dashboardCache?.takeIf{now-it.at<CACHE_MS}?.let{return it.value}
+        return DashboardData(jo(call("dashboard",token),"data")).also{dashboardCache=CacheEntry(now,it)}
+    }
+
+    fun cachedDashboard():DashboardData?=dashboardCache?.value
+    fun cachedTasks(token:String,scope:String,tab:String):TaskResult?=taskCache["$token|$scope|$tab"]?.value
+    fun cachedTickets():TicketResult?=ticketCache?.value
 
     suspend fun tasks(token:String,scope:String,tab:String,force:Boolean=false):TaskResult{
         val key="$token|$scope|$tab"
@@ -187,6 +197,23 @@ object ApiClient {
         }
         call("complete_task",token,p)
         taskCache.keys.filter{it.startsWith("$token|")}.forEach{taskCache.remove(it)}
+        dashboardCache=null
+    }
+
+    suspend fun transferTargets(token:String):List<TransferTarget>{
+        val d=jo(call("get_transfer_targets",token),"data")
+        return arr(d,"rows").map{val o=it.asJsonObject;TransferTarget(s(o,"userId"),s(o,"employeeId"),s(o,"name"))}
+    }
+
+    suspend fun transferTask(token:String,task:TaskItem,targetUserId:String){
+        val p=JsonObject().apply{
+            addProperty("taskId",task.instanceId)
+            addProperty("targetUserId",targetUserId)
+            addProperty("date",task.dueDate.take(10))
+        }
+        call("transfer_task",token,p)
+        taskCache.keys.filter{it.startsWith("$token|")}.forEach{taskCache.remove(it)}
+        dashboardCache=null
     }
 
     suspend fun tickets(token:String,force:Boolean=false):TicketResult{
@@ -248,9 +275,15 @@ object ApiClient {
         }
     }
 
+    suspend fun notificationCount(token:String):Int=i(jo(call("get_notification_summary",token),"data"),"unreadCount")
+
+    suspend fun markNotificationRead(token:String,id:String){
+        val p=JsonObject().apply{addProperty("notificationId",id)}
+        call("mark_notification_read",token,p)
+    }
     suspend fun markAllNotificationsRead(token:String){call("mark_all_notifications_read",token)}
     suspend fun logout(token:String){
-        taskCache.clear(); ticketCache=null
+        taskCache.clear(); ticketCache=null; dashboardCache=null
         runCatching{call("logout",token)}
     }
 }

@@ -36,6 +36,7 @@ import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlinx.coroutines.delay
 
 private val LpplGreen = Color(0xFF39A844)
 private val LpplDark = Color(0xFF16752A)
@@ -66,7 +67,8 @@ private fun LpplApp(session: SessionStore) {
         runCatching { ApiClient.bootstrap(token) }
             .onSuccess {
                 bootstrap=it
-                launch { ApiClient.prefetchTaskBundle(token) }
+                if(ApiClient.cachedTasks(token,"MY","today")==null) launch { ApiClient.prefetchTaskBundle(token) }
+                launch { runCatching { ApiClient.dashboard(token) } }
             }
             .onFailure { error=it.message ?: "Unable to connect"; session.clear(); token="" }
         loading=false
@@ -264,13 +266,20 @@ private fun MainShell(token:String, boot:BootstrapData, onLogout:()->Unit){
     var page by remember{mutableStateOf(Page.HOME)}
     var taskOpenTab by remember{mutableStateOf("today")}
     var profile by remember{mutableStateOf<ProfileData?>(null)}
+    var unread by remember(token){mutableIntStateOf(boot.unreadCount)}
 
     LaunchedEffect(token){
         runCatching{ApiClient.profile(token)}.onSuccess{profile=it}
     }
+    LaunchedEffect(token,page){
+        while(true){
+            runCatching{ApiClient.notificationCount(token)}.onSuccess{unread=it}
+            delay(60000)
+        }
+    }
 
     Scaffold(
-        topBar={TopBar(page,boot.user,profile,boot.unreadCount){page=Page.ALERTS}},
+        topBar={TopBar(page,boot.user,profile,unread){page=Page.ALERTS}},
         bottomBar={BottomNav(page){page=it}},
         containerColor=Color(0xFFF7FAF8)
     ){pad ->
@@ -285,7 +294,7 @@ private fun MainShell(token:String, boot:BootstrapData, onLogout:()->Unit){
                 Page.TASKS->TasksScreen(token,boot,taskOpenTab)
                 Page.TICKETS->TicketsScreen(token,boot)
                 Page.SHIFTS->ShiftRosterScreen(token,boot)
-                Page.ALERTS->AlertsScreen(token)
+                Page.ALERTS->AlertsScreen(token){unread=it}
                 Page.MORE->MoreScreen(boot,profile,onShiftRoster={page=Page.SHIFTS},onLogout=onLogout)
             }
         }
@@ -318,7 +327,7 @@ private fun TopBar(page:Page,user:User,profile:ProfileData?,unread:Int,onBell:()
                 Spacer(Modifier.width(9.dp))
                 Column{
                     Text(title,fontWeight=FontWeight.Black,fontSize=17.sp,color=Color.White)
-                    Text("Legend Polyfoams",fontSize=9.sp,color=Color(0xFFE5F6E9))
+                    Text("Legend Polyfoams Pvt. Ltd.",fontSize=12.sp,fontWeight=FontWeight.SemiBold,color=Color(0xFFE5F6E9),maxLines=1,overflow=TextOverflow.Ellipsis)
                 }
             }
         },
@@ -404,11 +413,11 @@ private fun DashboardScreen(
     onTickets:()->Unit,
     onShifts:()->Unit
 ){
-    var data by remember{mutableStateOf<DashboardData?>(null)}
+    var data by remember{mutableStateOf(ApiClient.cachedDashboard())}
     var err by remember{mutableStateOf("")}
     val today=remember{LocalDate.now()}
     val dateText=remember(today){today.format(DateTimeFormatter.ofPattern("EEEE, dd MMM yyyy",Locale.ENGLISH))}
-    LaunchedEffect(Unit){
+    LaunchedEffect(token){
         runCatching{ApiClient.dashboard(token)}.onSuccess{data=it}.onFailure{err=it.message?:""}
     }
 
@@ -528,7 +537,7 @@ private fun DashboardMetricCard(
         modifier=modifier.height(86.dp).clickable(onClick=onClick),
         shape=RoundedCornerShape(13.dp),
         colors=CardDefaults.cardColors(containerColor=Color.White),
-        border=androidx.compose.foundation.BorderStroke(1.dp,if(title.contains("Overdue"))Color(0xFFFFB4B4) else Color(0xFFDCE4EA))
+        border=androidx.compose.foundation.BorderStroke(1.5.dp,accent)
     ){
         Column(Modifier.fillMaxSize().padding(11.dp),verticalArrangement=Arrangement.SpaceBetween){
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){
@@ -565,9 +574,12 @@ private fun QuickOperation(label:String,icon:androidx.compose.ui.graphics.vector
 private fun TasksScreen(token:String,boot:BootstrapData,initialTab:String="today"){
     var scopeSel by remember{mutableStateOf("MY")}
     var tab by remember(initialTab){mutableStateOf(initialTab)}
-    var result by remember{mutableStateOf<TaskResult?>(null)}
+    var result by remember(token,scopeSel,tab){mutableStateOf(ApiClient.cachedTasks(token,scopeSel,tab))}
     var err by remember{mutableStateOf("")}
     var busyId by remember{mutableStateOf("")}
+    var transferTask by remember{mutableStateOf<TaskItem?>(null)}
+    var transferTargets by remember{mutableStateOf<List<TransferTarget>>(emptyList())}
+    var transferError by remember{mutableStateOf("")}
     val scope=rememberCoroutineScope()
 
     fun reload(force:Boolean=false){
@@ -582,8 +594,8 @@ private fun TasksScreen(token:String,boot:BootstrapData,initialTab:String="today
     LaunchedEffect(scopeSel,tab){reload(false)}
 
     Column(Modifier.fillMaxSize().background(Color(0xFFF7FAF8))){
-        if(boot.canViewTeamTasks) Segmented(listOf("MY" to "My","TEAM" to "Team"),scopeSel){scopeSel=it;result=null}
-        TaskTabs(tab,result?.counts ?: emptyMap()){tab=it;result=null}
+        if(boot.canViewTeamTasks) Segmented(listOf("MY" to "My","TEAM" to "Team"),scopeSel){scopeSel=it}
+        TaskTabs(tab,result?.counts ?: emptyMap()){tab=it}
         if(err.isNotBlank()) ErrorCard(err)
         val list=result?.tasks
         if(list==null){
@@ -613,8 +625,13 @@ private fun TasksScreen(token:String,boot:BootstrapData,initialTab:String="today
             EmptyState("No " + tab.replaceFirstChar{it.uppercase()} + " tasks")
         } else {
             LazyColumn(Modifier.fillMaxSize().padding(horizontal=10.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
-                items(list,key={it.instanceId}){task->
-                    TaskRow(task,scopeSel=="TEAM",busyId==task.instanceId,onDone={
+                items(list.distinctBy{it.instanceId},key={it.instanceId}){task->
+                    TaskRow(task,scopeSel=="TEAM",busyId==task.instanceId,onTransfer={
+                        transferTask=task;transferError="";transferTargets=emptyList()
+                        scope.launch{runCatching{ApiClient.transferTargets(token)}
+                            .onSuccess{transferTargets=it.filter{target->target.employeeId!=task.employeeId}}
+                            .onFailure{transferError=it.message?:"Unable to load employees"}}
+                    },onDone={
                         busyId=task.instanceId
                         scope.launch{
                             runCatching{ApiClient.completeTask(token,task.instanceId)}
@@ -630,6 +647,30 @@ private fun TasksScreen(token:String,boot:BootstrapData,initialTab:String="today
                 }
             }
         }
+    }
+    transferTask?.let{task->
+        AlertDialog(
+            onDismissRequest={if(busyId.isBlank())transferTask=null},
+            title={Text("Transfer task",fontWeight=FontWeight.Bold)},
+            text={Column(Modifier.heightIn(max=350.dp).verticalScroll(rememberScrollState())){
+                Text(task.title,fontWeight=FontWeight.SemiBold)
+                Text("Only direct reports allowed by PMS rules are listed.",fontSize=11.sp,color=TextMuted)
+                if(transferError.isNotBlank())Text(transferError,color=Color.Red)
+                if(transferTargets.isEmpty()&&transferError.isBlank())CircularProgressIndicator(Modifier.size(20.dp))
+                transferTargets.forEach{target->
+                    TextButton(onClick={
+                        busyId=task.instanceId
+                        scope.launch{runCatching{ApiClient.transferTask(token,task,target.userId)}
+                            .onSuccess{transferTask=null;result=null;reload(true)}
+                            .onFailure{transferError=it.message?:"Transfer failed"}
+                            busyId=""}
+                    },enabled=busyId.isBlank(),modifier=Modifier.fillMaxWidth()){
+                        Text(target.employeeId+" · "+target.name)
+                    }
+                }
+            }},
+            confirmButton={TextButton(onClick={transferTask=null},enabled=busyId.isBlank()){Text("Cancel")}}
+        )
     }
 }
 
@@ -667,7 +708,7 @@ private fun TaskTabs(selected:String,counts:Map<String,Int>,onSelect:(String)->U
 }
 
 @Composable
-private fun TaskRow(t:TaskItem,isTeam:Boolean,busy:Boolean,onDone:()->Unit){
+private fun TaskRow(t:TaskItem,isTeam:Boolean,busy:Boolean,onTransfer:()->Unit,onDone:()->Unit){
     Card(
         Modifier.fillMaxWidth(),
         shape=RoundedCornerShape(12.dp),
@@ -700,13 +741,16 @@ private fun TaskRow(t:TaskItem,isTeam:Boolean,busy:Boolean,onDone:()->Unit){
                 StatusChip(t.status)
             }
             Spacer(Modifier.height(7.dp))
-            Text(t.title,fontWeight=FontWeight.SemiBold,fontSize=13.sp,maxLines=2,overflow=TextOverflow.Ellipsis,color=Color(0xFF0E1F31))
+            Text(t.title,fontWeight=FontWeight.Bold,fontSize=14.sp,maxLines=2,overflow=TextOverflow.Ellipsis,color=Color(0xFF0E1F31))
             Spacer(Modifier.height(9.dp))
             HorizontalDivider(color=Color(0xFFE9EEF2))
             Spacer(Modifier.height(7.dp))
             Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){
                 val meta=listOf(t.category,if(isTeam)t.employeeName else "").filter{it.isNotBlank()}.joinToString(" • ")
-                Text(meta.ifBlank{t.department},fontSize=10.sp,color=Color(0xFF60758B),modifier=Modifier.weight(1f),maxLines=1,overflow=TextOverflow.Ellipsis)
+                Text(meta.ifBlank{t.department},fontSize=12.sp,color=Color(0xFF60758B),modifier=Modifier.weight(1f),maxLines=1,overflow=TextOverflow.Ellipsis)
+                if(t.canTransfer){
+                    TextButton(onClick=onTransfer,enabled=!busy){Text("Transfer",fontSize=11.sp)}
+                }
                 if(t.canComplete && !t.status.equals("completed",true)){
                     Button(
                         onClick=onDone,enabled=!busy,
@@ -731,7 +775,7 @@ private fun TaskRow(t:TaskItem,isTeam:Boolean,busy:Boolean,onDone:()->Unit){
 private fun TicketsScreen(token:String,boot:BootstrapData){
     var scopeSel by remember{mutableStateOf("MY")}
     var ownerSel by remember{mutableStateOf("CREATED")}
-    var data by remember{mutableStateOf<TicketResult?>(null)}
+    var data by remember{mutableStateOf(ApiClient.cachedTickets())}
     var status by remember{mutableStateOf("ALL")}
     var filtersOpen by remember{mutableStateOf(false)}
     var department by remember{mutableStateOf("ALL")}
@@ -775,34 +819,33 @@ private fun TicketsScreen(token:String,boot:BootstrapData){
                     scopeSel=it;ownerSel="CREATED"
                 }
             }
-            Row(Modifier.fillMaxWidth().padding(horizontal=10.dp,vertical=3.dp),horizontalArrangement=Arrangement.spacedBy(7.dp)){
+            Row(Modifier.fillMaxWidth().padding(horizontal=10.dp,vertical=3.dp),horizontalArrangement=Arrangement.spacedBy(5.dp),verticalAlignment=Alignment.CenterVertically){
                 FilterChip(
                     selected=ownerSel=="CREATED",
                     onClick={ownerSel="CREATED"},
-                    label={Text(if(scopeSel=="TEAM")"Created by Team" else "Created by Me",fontSize=10.sp)}
+                    label={Text(if(scopeSel=="TEAM")"Created by Team" else "Created by Me",fontSize=10.sp,maxLines=1)}
                 )
                 FilterChip(
                     selected=ownerSel=="ASSIGNED",
                     onClick={ownerSel="ASSIGNED"},
-                    label={Text(if(scopeSel=="TEAM")"Assigned to Team" else "Assigned to Me",fontSize=10.sp)}
+                    label={Text(if(scopeSel=="TEAM")"Assigned to Team" else "Assigned to Me",fontSize=10.sp,maxLines=1)}
                 )
-            }
-            Row(Modifier.fillMaxWidth().padding(horizontal=10.dp,vertical=4.dp),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){
-                Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(6.dp)){
-                    listOf("ALL","OPEN","IN PROGRESS","ARCHIVE","CLOSED").forEach{s->
-                        FilterChip(
-                            selected=status==s,
-                            onClick={status=s},
-                            label={Text(s.lowercase().replaceFirstChar{it.uppercase()},fontSize=10.sp)},
-                            colors=FilterChipDefaults.filterChipColors(selectedContainerColor=Color(0xFFE9E0FF),selectedLabelColor=Color(0xFF44227A))
-                        )
-                    }
-                }
+                Spacer(Modifier.weight(1f))
                 IconButton(onClick={filtersOpen=!filtersOpen}){
                     BadgedBox(badge={
                         val active=listOf(department,category,urgency).count{it!="ALL"}
                         if(active>0) Badge{Text(active.toString())}
                     }){Icon(Icons.Default.Tune,"Filters")}
+                }
+            }
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=10.dp,vertical=4.dp),horizontalArrangement=Arrangement.spacedBy(6.dp)){
+                listOf("ALL","OPEN","IN PROGRESS","ARCHIVE","CLOSED").forEach{s->
+                    FilterChip(
+                        selected=status==s,
+                        onClick={status=s},
+                        label={Text(s.lowercase().replaceFirstChar{it.uppercase()},fontSize=10.sp)},
+                        colors=FilterChipDefaults.filterChipColors(selectedContainerColor=Color(0xFFE9E0FF),selectedLabelColor=Color(0xFF44227A))
+                    )
                 }
             }
 
@@ -921,29 +964,37 @@ private fun TicketRow(t:TicketItem,onClick:()->Unit){
 }
 
 @Composable
-private fun AlertsScreen(token:String){
+private fun AlertsScreen(token:String,onUnreadChange:(Int)->Unit){
     var rows by remember{mutableStateOf<List<NotificationItem>?>(null)}
     var err by remember{mutableStateOf("")}
     val scope=rememberCoroutineScope()
     fun load(){
         scope.launch{
-            runCatching{ApiClient.notifications(token)}.onSuccess{rows=it}.onFailure{err=it.message?:""}
+            runCatching{ApiClient.notifications(token)}.onSuccess{
+                rows=it
+                runCatching{ApiClient.notificationCount(token)}.onSuccess(onUnreadChange)
+            }.onFailure{err=it.message?:""}
         }
     }
     LaunchedEffect(Unit){load()}
     Column(Modifier.fillMaxSize()){
         Row(Modifier.fillMaxWidth().padding(12.dp),horizontalArrangement=Arrangement.End){
-            TextButton(onClick={scope.launch{ApiClient.markAllNotificationsRead(token);load()}}){Text("Mark all read")}
+            TextButton(onClick={scope.launch{runCatching{ApiClient.markAllNotificationsRead(token)}.onSuccess{load()}.onFailure{err=it.message?:""}}}){Text("Mark all read")}
         }
         if(err.isNotBlank())ErrorCard(err)
         if(rows==null) LinearProgressIndicator(Modifier.fillMaxWidth(),color=LpplGreen)
         else LazyColumn(Modifier.padding(horizontal=10.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
             items(rows!!,key={it.id}){n->
-                Card(colors=CardDefaults.cardColors(containerColor=if(n.isRead)Color.White else Color(0xFFEAF7EC))){
-                    Column(Modifier.padding(12.dp)){
-                        Text(n.title,fontWeight=FontWeight.Bold,fontSize=13.sp)
-                        Text(n.message,fontSize=12.sp,color=TextMuted,maxLines=3,overflow=TextOverflow.Ellipsis)
-                        Text(n.createdOn,fontSize=10.sp,color=TextMuted)
+                Card(modifier=Modifier.fillMaxWidth().clickable{
+                    if(!n.isRead)scope.launch{runCatching{ApiClient.markNotificationRead(token,n.id)}.onSuccess{load()}.onFailure{err=it.message?:""}}
+                },colors=CardDefaults.cardColors(containerColor=if(n.isRead)Color.White else Color(0xFFEAF7EC))){
+                    Row(Modifier.fillMaxWidth().height(68.dp).padding(horizontal=12.dp,vertical=7.dp),verticalAlignment=Alignment.CenterVertically){
+                        if(!n.isRead){Icon(Icons.Default.Circle,null,tint=LpplGreen,modifier=Modifier.size(7.dp));Spacer(Modifier.width(7.dp))}
+                        Column(Modifier.weight(1f)){
+                            Text(n.title,fontWeight=FontWeight.Bold,fontSize=12.sp,maxLines=1,overflow=TextOverflow.Ellipsis)
+                            Text(n.message,fontSize=11.sp,color=TextMuted,maxLines=1,overflow=TextOverflow.Ellipsis)
+                        }
+                        Text(n.createdOn.take(10),fontSize=9.sp,color=TextMuted,maxLines=1)
                     }
                 }
             }
@@ -1027,11 +1078,11 @@ private fun ShiftRosterScreen(token:String,boot:BootstrapData){
                         ){
                             Column(Modifier.weight(1f)){
                                 Row(verticalAlignment=Alignment.CenterVertically){
-                                    Text(row.employeeName.ifBlank{boot.user.name},fontWeight=FontWeight.Black,fontSize=17.sp,color=Color(0xFF102033))
+                                    Text(row.employeeName.ifBlank{boot.user.name},fontWeight=FontWeight.Black,fontSize=19.sp,color=Color(0xFF102033))
                                     if(row.employeeId.isNotBlank()){
                                         Spacer(Modifier.width(8.dp))
-                                        Surface(shape=RoundedCornerShape(6.dp),color=Color(0xFFE5F8EA),border=androidx.compose.foundation.BorderStroke(1.dp,Color(0xFF70D68B))){
-                                            Text(row.employeeId,Modifier.padding(horizontal=8.dp,vertical=4.dp),fontSize=10.sp,fontWeight=FontWeight.Bold,color=Color(0xFF16813A))
+                                        Surface(shape=RoundedCornerShape(7.dp),color=LpplGreen){
+                                            Text(row.employeeId,Modifier.padding(horizontal=10.dp,vertical=6.dp),fontSize=12.sp,fontWeight=FontWeight.Bold,color=Color.White)
                                         }
                                     }
                                 }
@@ -1039,7 +1090,7 @@ private fun ShiftRosterScreen(token:String,boot:BootstrapData){
                                 Text(listOf(row.department,row.shiftType.ifBlank{row.shiftName}).filter{it.isNotBlank()}.joinToString(" • "),fontSize=12.sp,color=Color(0xFF52718C))
                                 if(row.startTime.isNotBlank() || row.endTime.isNotBlank()){
                                     Spacer(Modifier.height(6.dp))
-                                    Text(row.startTime+" - "+row.endTime+"  ("+row.shiftCode+")",fontSize=13.sp,fontWeight=FontWeight.SemiBold,color=Color(0xFF405A73))
+                                    Text(row.startTime+" - "+row.endTime+"  ("+row.shiftCode+")",fontSize=16.sp,fontWeight=FontWeight.Bold,color=Color(0xFF244C36))
                                 }
                             }
                             if(boot.canManageTeamShifts){
@@ -1175,7 +1226,7 @@ private fun MoreScreen(boot:BootstrapData,profile:ProfileData?,onShiftRoster:()-
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)){
                         Text(profile?.name?.ifBlank{boot.user.name} ?: boot.user.name,fontWeight=FontWeight.Black,fontSize=16.sp,color=Color(0xFF14283A))
-                        Text(boot.user.employeeId+" • "+boot.user.effectiveRole,fontSize=10.sp,color=Color(0xFF64748B))
+                        Text(boot.user.employeeId+" • "+(profile?.designation?.ifBlank{boot.user.designation} ?: boot.user.designation),fontSize=11.sp,color=Color(0xFF64748B))
                         Text(boot.user.department,fontSize=10.sp,color=Color(0xFF16813A))
                     }
                     Icon(if(profileOpen)Icons.Default.ExpandLess else Icons.Default.ChevronRight,null,tint=Color(0xFF91A0B1))
