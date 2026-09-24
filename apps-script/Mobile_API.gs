@@ -17,6 +17,7 @@ function doPost(e) {
       case 'bootstrap': out = mobileBootstrap_(body.token); break;
       case 'dashboard': out = mobileData_(api_getDashboard(body.token, body.filters || {})); break;
       case 'get_tasks': out = mobileTasks_(body); break;
+      case 'get_task_bundle': out = mobileTaskBundle_(body.token); break;
       case 'complete_task': out = mobileCompleteTask_(body); break;
       case 'get_tickets': out = mobileTickets_(body.token); break;
       case 'create_ticket': out = mobileCreateTicket_(body); break;
@@ -24,6 +25,7 @@ function doPost(e) {
       case 'add_ticket_message': out = mobileData_(api_addTicketMessage(body.token, body.ticketId, body.message)); break;
       case 'update_ticket_status': out = mobileData_(api_updateTicketStatus(body.token, body.ticketId, body.status)); break;
       case 'get_notifications': out = mobileNotifications_(body.token); break;
+      case 'get_profile': out = mobileProfile_(body.token); break;
       case 'mark_all_notifications_read': out = mobileData_(api_markAllNotificationsRead(body.token)); break;
       case 'get_shift_roster': out = mobileData_(api_getShiftRosterV46(body.token, body.filters || {})); break;
       case 'get_my_shift': out = mobileMyShift_(body.token); break;
@@ -111,6 +113,19 @@ function mobileTasks_(body) {
   const masters = {};
   sheetToObjects_(SHEET_NAMES.TASK_MASTER).forEach(m => masters[String(m.MasterID || '')] = m);
   return { success:true, data:{ tasks:rows.map(row => mobileTask_(row, masters)), counts:counts } };
+}
+
+function mobileTaskBundle_(token) {
+  const r = api_getMyTaskWorkspaceV43(token);
+  if (!r || r.ok === false) return { success:false, error:r && r.error ? r.error : 'Unable to load tasks.' };
+  const d = r.data || {};
+  const masters = {};
+  sheetToObjects_(SHEET_NAMES.TASK_MASTER).forEach(m => masters[String(m.MasterID || '')] = m);
+  const tabs = {};
+  ['today','upcoming','overdue','notdone','onleave','completed'].forEach(key => {
+    tabs[key] = (d[key] || []).map(row => mobileTask_(row, masters));
+  });
+  return { success:true, data:{ tabs:tabs, counts:d.counts || {} } };
 }
 
 function mobileTask_(row, masterMap) {
@@ -245,4 +260,23 @@ function mobileMyShift_(token) {
     });
 
   return { success:true, data:{ rows:rows } };
+}
+
+
+function mobileProfile_(token) {
+  const r = api_getMyProfile(token);
+  if (!r || r.ok === false) return { success:false, error:r && r.error ? r.error : 'Unable to load profile.' };
+  const p = r.data || {};
+  return { success:true, data:{
+    userId:String(p.UserID || ''),
+    employeeId:String(p.EmployeeID || ''),
+    name:String(p.Name || ''),
+    email:String(p.Email || ''),
+    phone:String(p.PhoneNumber || p.Phone || ''),
+    department:String(p.Department || ''),
+    designation:String(p.Designation || ''),
+    role:String(p.Role || ''),
+    isManager:String(p.IsManager || '').toLowerCase() === 'yes',
+    profilePhotoDataUri:String(p.ProfilePhotoDataUri || '')
+  }};
 }
