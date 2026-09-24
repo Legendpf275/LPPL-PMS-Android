@@ -365,7 +365,6 @@ private fun DashboardScreen(token:String,boot:BootstrapData,onTasks:()->Unit,onS
     val dateText=remember(today){today.format(DateTimeFormatter.ofPattern("EEEE, dd MMM yyyy",Locale.ENGLISH))}
     LaunchedEffect(Unit){
         runCatching{ApiClient.dashboard(token)}.onSuccess{data=it}.onFailure{err=it.message?:""}
-        launch { ApiClient.prefetchTodayTasks(token) }
     }
 
     val raw=data?.raw
@@ -553,17 +552,43 @@ private fun TasksScreen(token:String,boot:BootstrapData){
 
 @Composable
 private fun TaskTabs(selected:String,onSelect:(String)->Unit){
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(10.dp),horizontalArrangement=Arrangement.spacedBy(8.dp)){
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(10.dp),horizontalArrangement=Arrangement.spacedBy(7.dp)){
         listOf(
             "today" to "Today","upcoming" to "Upcoming","overdue" to "Overdue",
             "notdone" to "Not Done","onleave" to "On Leave","completed" to "Completed"
-        ).forEach{(k,l)->FilterChip(selected=selected==k,onClick={onSelect(k)},label={Text(l)})}
+        ).forEach{(k,l)->
+            FilterChip(
+                selected=selected==k,
+                onClick={onSelect(k)},
+                label={Text(l,fontSize=10.sp,fontWeight=if(selected==k)FontWeight.Bold else FontWeight.Medium)},
+                colors=FilterChipDefaults.filterChipColors(
+                    selectedContainerColor=Color(0xFFE7F8EB),
+                    selectedLabelColor=Color(0xFF0C7C35),
+                    containerColor=Color.White,
+                    labelColor=Color(0xFF53657D)
+                ),
+                border=FilterChipDefaults.filterChipBorder(
+                    enabled=true,
+                    selected=selected==k,
+                    borderColor=Color(0xFFD8E2E9),
+                    selectedBorderColor=Color(0xFF79D998)
+                )
+            )
+        }
     }
 }
 
 @Composable
 private fun TaskRow(t:TaskItem,busy:Boolean,onDone:()->Unit){
-    Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(12.dp),colors=CardDefaults.cardColors(containerColor=Color.White)){
+    Card(
+        Modifier.fillMaxWidth(),
+        shape=RoundedCornerShape(13.dp),
+        colors=CardDefaults.cardColors(containerColor=Color.White),
+        border=androidx.compose.foundation.BorderStroke(
+            1.dp,
+            if(t.status.equals("Overdue",true)) Color(0xFFFFB2B2) else Color(0xFFDCE5EA)
+        )
+    ){
         Column(Modifier.padding(11.dp)){
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){
                 Row(verticalAlignment=Alignment.CenterVertically){
