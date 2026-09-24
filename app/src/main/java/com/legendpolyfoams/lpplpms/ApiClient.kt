@@ -35,6 +35,7 @@ data class DashboardData(val raw:JsonObject=JsonObject())
 data class LoginResult(val token:String,val user:User)
 data class TaskResult(val tasks:List<TaskItem>, val counts:Map<String,Int> = emptyMap())
 data class TicketUser(val userId:String,val employeeId:String,val name:String,val department:String)
+data class TicketUpload(val bytes:ByteArray,val fileName:String,val mimeType:String)
 data class TicketResult(val mine:List<TicketItem>,val team:List<TicketItem>,val canViewTeam:Boolean,val users:List<TicketUser> = emptyList())
 data class ShiftRow(
     val rosterId:String="", val userId:String="", val employeeId:String="", val employeeName:String="",
@@ -233,7 +234,7 @@ object ApiClient {
         ).also{ticketCache=CacheEntry(now,it)}
     }
 
-    suspend fun createTicket(token:String,department:String,userId:String,category:String,priority:String,dueDate:String,description:String,machineArea:String):String{
+    suspend fun createTicket(token:String,department:String,userId:String,category:String,priority:String,dueDate:String,description:String,machineArea:String,attachment:TicketUpload?=null,voice:TicketUpload?=null):String{
         val ticket=JsonObject().apply{
             addProperty("Department",department)
             addProperty("AssignedToUserID",userId)
@@ -243,7 +244,19 @@ object ApiClient {
             addProperty("Description",description)
             addProperty("MachineArea",machineArea)
         }
-        val p=JsonObject().apply{add("ticket",ticket)}
+        val p=JsonObject().apply{
+            add("ticket",ticket)
+            attachment?.let{
+                addProperty("photoBase64",android.util.Base64.encodeToString(it.bytes,android.util.Base64.NO_WRAP))
+                addProperty("photoFileName",it.fileName)
+                addProperty("photoMimeType",it.mimeType)
+            }
+            voice?.let{
+                addProperty("voiceBase64",android.util.Base64.encodeToString(it.bytes,android.util.Base64.NO_WRAP))
+                addProperty("voiceFileName",it.fileName)
+                addProperty("voiceMimeType",it.mimeType)
+            }
+        }
         val id=s(jo(call("create_ticket",token,p),"data"),"ticketId")
         ticketCache=null
         dashboardCache=null

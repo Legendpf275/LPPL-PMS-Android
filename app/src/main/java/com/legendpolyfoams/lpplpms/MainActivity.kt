@@ -1,10 +1,21 @@
 package com.legendpolyfoams.lpplpms
 
 import android.os.Bundle
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
+import android.media.MediaRecorder
+import android.net.Uri
+import android.provider.OpenableColumns
 import android.util.Base64
+import android.widget.DatePickerDialog
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
@@ -25,6 +36,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontWeight
@@ -33,6 +47,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.util.UUID
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -316,11 +334,11 @@ private fun TopBar(page:Page,user:User,profile:ProfileData?,unread:Int,onBell:()
     TopAppBar(
         title={
             Row(verticalAlignment=Alignment.CenterVertically){
-                Surface(modifier=Modifier.size(42.dp),shape=RoundedCornerShape(9.dp),color=Color.White){
+                Surface(modifier=Modifier.size(38.dp),shape=RoundedCornerShape(8.dp),color=Color.White){
                     Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){
-                        Column(horizontalAlignment=Alignment.CenterHorizontally){
-                            Text("LPPL",fontSize=11.sp,fontWeight=FontWeight.Black,color=LpplGreen)
-                            Text("PMS",fontSize=9.sp,fontWeight=FontWeight.Black,color=LpplDark)
+                        Column(horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(0.dp)){
+                            Text("LPPL",fontSize=10.sp,lineHeight=10.sp,fontWeight=FontWeight.Black,color=LpplGreen)
+                            Text("PMS",fontSize=9.sp,lineHeight=9.sp,fontWeight=FontWeight.Black,color=LpplDark)
                         }
                     }
                 }
@@ -817,6 +835,41 @@ private fun TaskRow(t:TaskItem,isTeam:Boolean,busy:Boolean,selecting:Boolean,sel
     }
 }
 
+private data class TicketMedia(val uri:Uri,val mimeType:String,val fallbackName:String)
+
+private fun newTicketMediaUri(context:Context,extension:String):Uri{
+    val folder=File(context.cacheDir,"ticket_media").apply{mkdirs()}
+    val file=File(folder,"ticket_${UUID.randomUUID()}.$extension")
+    return FileProvider.getUriForFile(context,"${context.packageName}.fileprovider",file)
+}
+
+private fun ticketDisplayName(context:Context,media:TicketMedia):String = runCatching{
+    context.contentResolver.query(media.uri,arrayOf(OpenableColumns.DISPLAY_NAME),null,null,null)?.use{cursor->
+        if(cursor.moveToFirst())cursor.getString(0) else null
+    }
+}.getOrNull()?.takeIf{it.isNotBlank()} ?: media.fallbackName
+
+private suspend fun readTicketUpload(context:Context,media:TicketMedia):TicketUpload=withContext(Dispatchers.IO){
+    val maxBytes=10_000_000
+    val name=runCatching{
+        context.contentResolver.query(media.uri,arrayOf(OpenableColumns.DISPLAY_NAME),null,null,null)?.use{cursor->
+            if(cursor.moveToFirst())cursor.getString(0) else null
+        }
+    }.getOrNull()?.takeIf{it.isNotBlank()} ?: media.fallbackName
+    val bytes=context.contentResolver.openInputStream(media.uri)?.use{input->
+        val out=java.io.ByteArrayOutputStream()
+        val buffer=ByteArray(8192)
+        while(true){
+            val read=input.read(buffer)
+            if(read<0)break
+            if(out.size()+read>maxBytes)throw ApiException("Each attachment must be under 10 MB. Record a shorter video.")
+            out.write(buffer,0,read)
+        }
+        out.toByteArray()
+    } ?: throw ApiException("Could not read the selected file")
+    TicketUpload(bytes,name.take(150),media.mimeType)
+}
+
 @Composable
 private fun TicketsScreen(token:String,boot:BootstrapData){
     var scopeSel by remember{mutableStateOf("MY")}
@@ -838,8 +891,77 @@ private fun TicketsScreen(token:String,boot:BootstrapData){
     var newDate by remember{mutableStateOf(LocalDate.now().toString())}
     var newDescription by remember{mutableStateOf("")}
     var newMachine by remember{mutableStateOf("")}
+    var attachment by remember{mutableStateOf<TicketMedia?>(null)}
+    var voiceNote by remember{mutableStateOf<TicketMedia?>(null)}
+    var captureUri by remember{mutableStateOf<Uri?>(null)}
+    var recorder by remember{mutableStateOf<MediaRecorder?>(null)}
+    var recordingFile by remember{mutableStateOf<File?>(null)}
+    var recording by remember{mutableStateOf(false)}
     var err by remember{mutableStateOf("")}
     val scope=rememberCoroutineScope()
+    val context=LocalContext.current
+    val files=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()){uri->
+        if(uri!=null){
+            val mime=context.contentResolver.getType(uri).orEmpty().substringBefore(';').lowercase()
+            if(mime in listOf("image/jpeg","image/png","image/webp","application/pdf","video/mp4","video/3gpp"))
+                attachment=TicketMedia(uri,mime,"ticket_attachment")
+            else createError="Choose a JPG, PNG, WebP, PDF or MP4 video"
+        }
+    }
+    val voiceFiles=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()){uri->
+        if(uri!=null){
+            val mime=context.contentResolver.getType(uri).orEmpty().substringBefore(';').lowercase()
+            if(mime in listOf("audio/mp4","audio/x-m4a","audio/mpeg","audio/ogg","audio/wav","audio/x-wav","audio/aac","audio/3gpp","audio/3gpp2","audio/amr","audio/webm"))
+                voiceNote=TicketMedia(uri,mime,"voice_note")
+            else createError="Choose a supported audio file"
+        }
+    }
+    val cameraPhoto=rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()){success->
+        if(success)captureUri?.let{attachment=TicketMedia(it,"image/jpeg","camera_photo.jpg")}
+        captureUri=null
+    }
+    val cameraVideo=rememberLauncherForActivityResult(ActivityResultContracts.CaptureVideo()){success->
+        if(success)captureUri?.let{attachment=TicketMedia(it,"video/mp4","camera_video.mp4")}
+        captureUri=null
+    }
+    fun startRecording(){
+        var next:MediaRecorder?=null
+        try{
+            val file=File(File(context.cacheDir,"ticket_media").apply{mkdirs()},"voice_${UUID.randomUUID()}.m4a")
+            val active=MediaRecorder()
+            next=active
+            active.setAudioSource(MediaRecorder.AudioSource.MIC)
+            active.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+            active.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+            active.setAudioEncodingBitRate(64000)
+            active.setAudioSamplingRate(44100)
+            active.setMaxDuration(120000)
+            active.setOutputFile(file.absolutePath)
+            active.prepare();active.start()
+            recordingFile=file;recorder=active;recording=true;createError=""
+        }catch(e:Exception){
+            next?.release();recorder=null;recording=false
+            createError=e.message?:"Microphone could not start"
+        }
+    }
+    fun stopRecording(save:Boolean){
+        val active=recorder
+        recorder=null;recording=false
+        val file=recordingFile
+        recordingFile=null
+        if(active!=null){
+            val stopped=runCatching{active.stop()}.isSuccess
+            active.release()
+            if(save&&stopped&&file!=null&&file.length()>0)
+                voiceNote=TicketMedia(Uri.fromFile(file),"audio/mp4",file.name)
+            else if(save)createError="Voice note was too short. Please record again."
+        }
+        if(!save)file?.delete()
+    }
+    val microphonePermission=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()){granted->
+        if(granted)startRecording() else createError="Microphone permission is required to record a voice note"
+    }
+    DisposableEffect(Unit){onDispose{recorder?.run{runCatching{stop()};release()};recordingFile?.delete()}}
 
     LaunchedEffect(Unit){
         runCatching{ApiClient.tickets(token)}.onSuccess{data=it}.onFailure{err=it.message?:""}
@@ -869,7 +991,7 @@ private fun TicketsScreen(token:String,boot:BootstrapData){
         ownerOk && statusOk && deptOk && catOk && urgOk
     }
 
-    Box(Modifier.fillMaxSize().background(Color(0xFFF7FAF8))){
+    Box(Modifier.fillMaxSize().background(Color.White)){
         Column(Modifier.fillMaxSize()){
             if(boot.canViewTeamTickets){
                 Segmented(listOf("MY" to "My","TEAM" to "Team"),scopeSel){
@@ -953,42 +1075,109 @@ private fun TicketsScreen(token:String,boot:BootstrapData){
         ){Icon(Icons.Default.Add,"New Ticket")}
 
         if(createOpen){
-            AlertDialog(
-                onDismissRequest={if(!createBusy)createOpen=false},
-                title={Text("Raise Help Ticket",fontWeight=FontWeight.Bold)},
-                text={Column(Modifier.heightIn(max=510.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(9.dp)){
-                    Text("Route the issue to the correct doer.",fontSize=12.sp,color=TextMuted)
-                    TicketSelect("Doer department *",newDepartment,boot.departments){newDepartment=it;newUser=null}
-                    TicketSelect("Doer *",newUser?.let{it.employeeId+" · "+it.name}.orEmpty(),
-                        data?.users?.filter{it.department==newDepartment}?.map{it.employeeId+" · "+it.name}.orEmpty()) { label ->
-                        newUser=data?.users?.firstOrNull{it.department==newDepartment && it.employeeId+" · "+it.name==label}
-                    }
-                    TicketSelect("Category *",newCategory,boot.ticketCategories){newCategory=it}
-                    TicketSelect("Urgency *",newPriority,boot.priorities){newPriority=it}
-                    OutlinedTextField(newDate,{newDate=it},label={Text("Due date * (YYYY-MM-DD)")},singleLine=true,modifier=Modifier.fillMaxWidth())
-                    OutlinedTextField(newMachine,{newMachine=it},label={Text("Machine / Area")},singleLine=true,modifier=Modifier.fillMaxWidth())
-                    OutlinedTextField(newDescription,{newDescription=it},label={Text("Description *")},minLines=3,modifier=Modifier.fillMaxWidth())
-                    if(createError.isNotBlank())Text(createError,color=Color.Red,fontSize=12.sp)
-                }},
-                confirmButton={Button(onClick={
-                    val parsed=runCatching{LocalDate.parse(newDate)}.getOrNull()
-                    when {
-                        newDepartment.isBlank()||newUser==null||newCategory.isBlank()||newPriority.isBlank()||newDescription.isBlank()->createError="Complete all required fields"
-                        parsed==null||parsed.isBefore(LocalDate.now())->createError="Enter a valid due date (YYYY-MM-DD)"
-                        else->{
-                            createBusy=true;createError=""
-                            scope.launch{
-                                runCatching{ApiClient.createTicket(token,newDepartment,newUser!!.userId,newCategory,newPriority,newDate,newDescription.trim(),newMachine.trim())}
-                                    .onSuccess{createOpen=false;newDescription="";newMachine="";data=null
-                                        runCatching{ApiClient.tickets(token,true)}.onSuccess{data=it;scopeSel="MY";ownerSel="CREATED"}}
-                                    .onFailure{createError=it.message?:"Could not create ticket"}
-                                createBusy=false
+            Dialog(onDismissRequest={if(!createBusy){stopRecording(false);createOpen=false}},
+                properties=DialogProperties(usePlatformDefaultWidth=false)){
+                Surface(Modifier.fillMaxSize(),color=Color.White){
+                    Column(Modifier.fillMaxSize()){
+                        Row(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=10.dp),verticalAlignment=Alignment.CenterVertically){
+                            IconButton(onClick={stopRecording(false);createOpen=false},enabled=!createBusy){Icon(Icons.Default.Close,"Close")}
+                            Text("Raise Help Ticket",fontSize=20.sp,fontWeight=FontWeight.Bold,color=TextPrimary)
+                        }
+                        HorizontalDivider(color=Color(0xFFE2E8E3))
+                        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
+                            Text("Select a doer and describe the issue.",fontSize=13.sp,color=TextMuted)
+                            TicketSelect("Doer department *",newDepartment,boot.departments){newDepartment=it;newUser=null}
+                            TicketSelect("Doer *",newUser?.let{it.employeeId+" · "+it.name}.orEmpty(),
+                                data?.users?.filter{it.department==newDepartment}?.map{it.employeeId+" · "+it.name}.orEmpty()) { label ->
+                                newUser=data?.users?.firstOrNull{it.department==newDepartment && it.employeeId+" · "+it.name==label}
                             }
+                            TicketSelect("Category *",newCategory,boot.ticketCategories){newCategory=it}
+                            TicketSelect("Urgency *",newPriority,boot.priorities){newPriority=it}
+                            OutlinedButton(onClick={
+                                val day=runCatching{LocalDate.parse(newDate)}.getOrDefault(LocalDate.now())
+                                DatePickerDialog(context,{_,year,month,dayOfMonth->
+                                    newDate=LocalDate.of(year,month+1,dayOfMonth).toString()
+                                },day.year,day.monthValue-1,day.dayOfMonth).apply{
+                                    datePicker.minDate=System.currentTimeMillis()-86400000L
+                                }.show()
+                            },modifier=Modifier.fillMaxWidth()){
+                                Icon(Icons.Default.CalendarMonth,null)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Due date *: $newDate",modifier=Modifier.weight(1f))
+                            }
+                            OutlinedTextField(newMachine,{newMachine=it},label={Text("Machine / Area (optional)")},singleLine=true,modifier=Modifier.fillMaxWidth())
+                            OutlinedTextField(newDescription,{newDescription=it},label={Text("Description *")},minLines=3,modifier=Modifier.fillMaxWidth())
+                            Text("Attachment (optional)",fontWeight=FontWeight.SemiBold)
+                            Row(horizontalArrangement=Arrangement.spacedBy(7.dp)){
+                                OutlinedButton(onClick={files.launch(arrayOf("image/*","application/pdf","video/*"))},modifier=Modifier.weight(1f),contentPadding=PaddingValues(horizontal=6.dp)){
+                                    Icon(Icons.Default.FolderOpen,null,Modifier.size(18.dp));Spacer(Modifier.width(3.dp));Text("Storage",fontSize=12.sp)
+                                }
+                                OutlinedButton(onClick={
+                                    val uri=newTicketMediaUri(context,"jpg");captureUri=uri;cameraPhoto.launch(uri)
+                                },modifier=Modifier.weight(1f),contentPadding=PaddingValues(horizontal=6.dp)){
+                                    Icon(Icons.Default.PhotoCamera,null,Modifier.size(18.dp));Spacer(Modifier.width(3.dp));Text("Photo",fontSize=12.sp)
+                                }
+                                OutlinedButton(onClick={
+                                    val uri=newTicketMediaUri(context,"mp4");captureUri=uri;cameraVideo.launch(uri)
+                                },modifier=Modifier.weight(1f),contentPadding=PaddingValues(horizontal=6.dp)){
+                                    Icon(Icons.Default.Videocam,null,Modifier.size(18.dp));Spacer(Modifier.width(3.dp));Text("Video",fontSize=12.sp)
+                                }
+                            }
+                            attachment?.let{Row(verticalAlignment=Alignment.CenterVertically){
+                                Text("Selected: "+ticketDisplayName(context,it),modifier=Modifier.weight(1f),fontSize=12.sp,maxLines=2)
+                                IconButton(onClick={attachment=null}){Icon(Icons.Default.Close,"Remove attachment")}
+                            }}
+                            Text("Voice note (optional)",fontWeight=FontWeight.SemiBold)
+                            Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
+                                OutlinedButton(onClick={
+                                    if(recording)stopRecording(true)
+                                    else if(ContextCompat.checkSelfPermission(context,Manifest.permission.RECORD_AUDIO)==PackageManager.PERMISSION_GRANTED)startRecording()
+                                    else microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
+                                },modifier=Modifier.weight(1f)){
+                                    Icon(if(recording)Icons.Default.Stop else Icons.Default.Mic,null,Modifier.size(18.dp))
+                                    Spacer(Modifier.width(4.dp));Text(if(recording)"Stop" else "Record")
+                                }
+                                OutlinedButton(onClick={voiceFiles.launch(arrayOf("audio/*"))},modifier=Modifier.weight(1f)){
+                                    Text("Choose audio")
+                                }
+                            }
+                            if(recording)Text("Recording… tap Stop when finished",color=Color(0xFFC52B2B),fontSize=12.sp)
+                            voiceNote?.let{Row(verticalAlignment=Alignment.CenterVertically){
+                                Text("Voice: "+ticketDisplayName(context,it),modifier=Modifier.weight(1f),fontSize=12.sp)
+                                IconButton(onClick={voiceNote=null}){Icon(Icons.Default.Close,"Remove voice note")}
+                            }}
+                            Text("Each file must be under 10 MB. Record a short video.",fontSize=11.sp,color=TextMuted)
+                            if(createError.isNotBlank())Text(createError,color=Color.Red,fontSize=12.sp)
+                        }
+                        HorizontalDivider(color=Color(0xFFE2E8E3))
+                        Row(Modifier.fillMaxWidth().padding(12.dp),horizontalArrangement=Arrangement.spacedBy(10.dp)){
+                            OutlinedButton(onClick={stopRecording(false);createOpen=false},enabled=!createBusy,modifier=Modifier.weight(1f)){Text("Cancel")}
+                            Button(onClick={
+                                val parsed=runCatching{LocalDate.parse(newDate)}.getOrNull()
+                                when {
+                                    newDepartment.isBlank()||newUser==null||newCategory.isBlank()||newPriority.isBlank()||newDescription.isBlank()->createError="Complete all required fields"
+                                    parsed==null||parsed.isBefore(LocalDate.now())->createError="Choose a valid due date"
+                                    recording->createError="Stop recording before submitting"
+                                    else->{
+                                        createBusy=true;createError=""
+                                        scope.launch{
+                                            runCatching{
+                                                val selectedAttachment=attachment?.let{readTicketUpload(context,it)}
+                                                val selectedVoice=voiceNote?.let{readTicketUpload(context,it)}
+                                                ApiClient.createTicket(token,newDepartment,newUser!!.userId,newCategory,newPriority,newDate,newDescription.trim(),newMachine.trim(),selectedAttachment,selectedVoice)
+                                            }.onSuccess{
+                                                createOpen=false;newDescription="";newMachine="";attachment=null;voiceNote=null;data=null
+                                                runCatching{ApiClient.tickets(token,true)}.onSuccess{data=it;scopeSel="MY";ownerSel="CREATED"}
+                                            }.onFailure{createError=it.message?:"Could not create ticket"}
+                                            createBusy=false
+                                        }
+                                    }
+                                }
+                            },enabled=!createBusy,modifier=Modifier.weight(1f)){Text(if(createBusy)"Submitting…" else "Submit Ticket")}
                         }
                     }
-                },enabled=!createBusy){Text(if(createBusy)"Submitting…" else "Submit Ticket")}},
-                dismissButton={TextButton(onClick={createOpen=false},enabled=!createBusy){Text("Cancel")}}
-            )
+                }
+            }
         }
 
         selectedTicket?.let{t->
