@@ -1,6 +1,8 @@
 package com.legendpolyfoams.lpplpms
 
 import android.os.Bundle
+import android.graphics.BitmapFactory
+import android.util.Base64
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
@@ -18,10 +20,12 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
@@ -61,7 +65,7 @@ private fun LpplApp(session: SessionStore) {
         runCatching { ApiClient.bootstrap(token) }
             .onSuccess {
                 bootstrap=it
-                launch { ApiClient.prefetchTodayTasks(token) }
+                launch { ApiClient.prefetchTaskBundle(token) }
             }
             .onFailure { error=it.message ?: "Unable to connect"; session.clear(); token="" }
         loading=false
@@ -257,19 +261,31 @@ enum class Page { HOME,TASKS,TICKETS,SHIFTS,ALERTS,MORE }
 @Composable
 private fun MainShell(token:String, boot:BootstrapData, onLogout:()->Unit){
     var page by remember{mutableStateOf(Page.HOME)}
+    var taskOpenTab by remember{mutableStateOf("today")}
+    var profile by remember{mutableStateOf<ProfileData?>(null)}
+
+    LaunchedEffect(token){
+        runCatching{ApiClient.profile(token)}.onSuccess{profile=it}
+    }
+
     Scaffold(
-        topBar={TopBar(page,boot.user,boot.unreadCount){page=Page.ALERTS}},
+        topBar={TopBar(page,boot.user,profile,boot.unreadCount){page=Page.ALERTS}},
         bottomBar={BottomNav(page){page=it}},
         containerColor=Color(0xFFF7FAF8)
     ){pad ->
         Box(Modifier.padding(pad).fillMaxSize()){
             when(page){
-                Page.HOME->DashboardScreen(token,boot,onTasks={page=Page.TASKS},onShifts={page=Page.SHIFTS})
-                Page.TASKS->TasksScreen(token,boot)
+                Page.HOME->DashboardScreen(
+                    token,boot,
+                    onTaskTab={tab->taskOpenTab=tab;page=Page.TASKS},
+                    onTickets={page=Page.TICKETS},
+                    onShifts={page=Page.SHIFTS}
+                )
+                Page.TASKS->TasksScreen(token,boot,taskOpenTab)
                 Page.TICKETS->TicketsScreen(token,boot)
                 Page.SHIFTS->ShiftRosterScreen(token,boot)
                 Page.ALERTS->AlertsScreen(token)
-                Page.MORE->MoreScreen(boot,onShiftRoster={page=Page.SHIFTS},onLogout=onLogout)
+                Page.MORE->MoreScreen(boot,profile,onShiftRoster={page=Page.SHIFTS},onLogout=onLogout)
             }
         }
     }
@@ -277,7 +293,7 @@ private fun MainShell(token:String, boot:BootstrapData, onLogout:()->Unit){
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun TopBar(page:Page,user:User,unread:Int,onBell:()->Unit){
+private fun TopBar(page:Page,user:User,profile:ProfileData?,unread:Int,onBell:()->Unit){
     val title=when(page){
         Page.HOME->"PMS Dashboard"
         Page.TASKS->"Tasks"
@@ -306,7 +322,7 @@ private fun TopBar(page:Page,user:User,unread:Int,onBell:()->Unit){
         },
         actions={
             IconButton(onClick=onBell){
-                BadgedBox(badge={if(unread>0) Badge(containerColor=Color(0xFFE60023)){Text(if(unread>99)"99+" else "$unread",color=Color.White)}}){
+                BadgedBox(badge={if(unread>0) Badge(containerColor=Color(0xFFE60023)){Text(if(unread>99)"99+" else unread.toString(),color=Color.White)}}){
                     Icon(Icons.Default.Notifications,"Notifications",tint=Color(0xFF26364A))
                 }
             }
@@ -317,9 +333,7 @@ private fun TopBar(page:Page,user:User,unread:Int,onBell:()->Unit){
                 border=androidx.compose.foundation.BorderStroke(1.dp,Color(0xFF7EE6A2))
             ){
                 Row(Modifier.padding(horizontal=8.dp,vertical=5.dp),verticalAlignment=Alignment.CenterVertically){
-                    Box(Modifier.size(24.dp).background(LpplGreen,CircleShape),contentAlignment=Alignment.Center){
-                        Text(user.name.trim().firstOrNull()?.uppercaseChar()?.toString()?:"U",color=Color.White,fontWeight=FontWeight.Black,fontSize=11.sp)
-                    }
+                    ProfileAvatar(profile?.profilePhotoDataUri.orEmpty(),user.name,24.dp)
                     Spacer(Modifier.width(5.dp))
                     Text(user.effectiveRole,fontSize=10.sp,color=Color(0xFF16813A),fontWeight=FontWeight.SemiBold)
                 }
@@ -327,6 +341,29 @@ private fun TopBar(page:Page,user:User,unread:Int,onBell:()->Unit){
         },
         colors=TopAppBarDefaults.topAppBarColors(containerColor=Color.White)
     )
+}
+
+@Composable
+private fun ProfileAvatar(dataUri:String,name:String,size:androidx.compose.ui.unit.Dp){
+    val imageBitmap=remember(dataUri){
+        if(dataUri.isBlank()) null else runCatching{
+            val raw=dataUri.substringAfter(",",dataUri)
+            val bytes=Base64.decode(raw,Base64.DEFAULT)
+            BitmapFactory.decodeByteArray(bytes,0,bytes.size)?.asImageBitmap()
+        }.getOrNull()
+    }
+    if(imageBitmap!=null){
+        Image(
+            bitmap=imageBitmap,
+            contentDescription="Profile photo",
+            modifier=Modifier.size(size).clip(CircleShape),
+            contentScale=ContentScale.Crop
+        )
+    }else{
+        Box(Modifier.size(size).background(LpplGreen,CircleShape),contentAlignment=Alignment.Center){
+            Text(name.trim().firstOrNull()?.uppercaseChar()?.toString()?:"U",color=Color.White,fontWeight=FontWeight.Black,fontSize=11.sp)
+        }
+    }
 }
 
 @Composable
