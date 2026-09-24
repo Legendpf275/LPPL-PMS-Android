@@ -1,0 +1,32 @@
+name: Build Signed LPPL PMS Release APK
+on:
+  workflow_dispatch:
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: native-ai-studio-rebuild
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: Restore permanent release keystore
+        shell: bash
+        run: |
+          echo "${{ secrets.LPPL_KEYSTORE_BASE64 }}" | base64 --decode > app/lppl-pms-release.jks
+      - name: Build signed release APK
+        env:
+          LPPL_KEYSTORE_PATH: lppl-pms-release.jks
+          LPPL_KEYSTORE_PASSWORD: ${{ secrets.LPPL_KEYSTORE_PASSWORD }}
+          LPPL_KEY_ALIAS: ${{ secrets.LPPL_KEY_ALIAS }}
+          LPPL_KEY_PASSWORD: ${{ secrets.LPPL_KEY_PASSWORD }}
+        run: gradle assembleRelease
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LPPL-PMS-signed-release-apk
+          path: app/build/outputs/apk/release/app-release.apk

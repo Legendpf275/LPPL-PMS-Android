@@ -15,6 +15,27 @@ android {
         versionName = "1.3.0-native"
         buildConfigField("String", "BASE_API_URL", "\"https://script.google.com/macros/s/AKfycbxG9BCPDBsQcrViIbJs7JTfPEvT5a4O9f8NiFwRu0Ij5JKx6PrhqQninPDZz4K2E_QO/exec\"")
     }
+    val releaseKeystorePath = System.getenv("LPPL_KEYSTORE_PATH")
+    if (!releaseKeystorePath.isNullOrBlank()) {
+        signingConfigs {
+            create("release") {
+                storeFile = file(releaseKeystorePath)
+                storePassword = System.getenv("LPPL_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("LPPL_KEY_ALIAS")
+                keyPassword = System.getenv("LPPL_KEY_PASSWORD")
+            }
+        }
+    }
+
+    buildTypes {
+        getByName("release") {
+            isMinifyEnabled = false
+            if (!releaseKeystorePath.isNullOrBlank()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
+        }
+    }
+
     buildFeatures { compose = true; buildConfig = true }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
