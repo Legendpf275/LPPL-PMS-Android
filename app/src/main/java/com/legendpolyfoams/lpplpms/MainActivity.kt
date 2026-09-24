@@ -543,7 +543,6 @@ private fun DashboardMetricCard(
 }
 
 @Composable
-@Composable
 private fun QuickOperation(label:String,icon:androidx.compose.ui.graphics.vector.ImageVector,modifier:Modifier,onClick:()->Unit){
     Surface(
         modifier=modifier.clickable(onClick=onClick),
