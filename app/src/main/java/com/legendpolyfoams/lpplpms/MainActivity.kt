@@ -395,7 +395,13 @@ private fun BottomNav(page:Page,onChange:(Page)->Unit){
 }
 
 @Composable
-private fun DashboardScreen(token:String,boot:BootstrapData,onTasks:()->Unit,onShifts:()->Unit){
+private fun DashboardScreen(
+    token:String,
+    boot:BootstrapData,
+    onTaskTab:(String)->Unit,
+    onTickets:()->Unit,
+    onShifts:()->Unit
+){
     var data by remember{mutableStateOf<DashboardData?>(null)}
     var err by remember{mutableStateOf("")}
     val today=remember{LocalDate.now()}
@@ -437,14 +443,14 @@ private fun DashboardScreen(token:String,boot:BootstrapData,onTasks:()->Unit,onS
                             Text(dateText,fontSize=10.sp,color=Color(0xFF00855A),fontWeight=FontWeight.Bold)
                         }
                         Spacer(Modifier.height(6.dp))
-                        Text("Hello, $greetingName",fontSize=16.sp,fontWeight=FontWeight.Black,color=Color(0xFF07111F))
+                        Text("Hello, " + greetingName,fontSize=16.sp,fontWeight=FontWeight.Black,color=Color(0xFF07111F))
                         Spacer(Modifier.height(2.dp))
-                        Text("$greetingDepartment • ${boot.user.effectiveRole}",fontSize=10.sp,color=Color(0xFF557085))
+                        Text(greetingDepartment + " • " + boot.user.effectiveRole,fontSize=10.sp,color=Color(0xFF557085))
                     }
                     Surface(shape=RoundedCornerShape(13.dp),color=Color(0xFFE9FFF1),border=androidx.compose.foundation.BorderStroke(1.dp,Color(0xFF82E9A9))){
                         Column(Modifier.padding(horizontal=13.dp,vertical=9.dp),horizontalAlignment=Alignment.CenterHorizontally){
                             Text("HISTORICAL",fontSize=9.sp,fontWeight=FontWeight.Bold,color=Color(0xFF14763B))
-                            Text("${completion}%",fontSize=21.sp,fontWeight=FontWeight.Black,color=Color(0xFF14883E))
+                            Text(completion.toString()+"%",fontSize=21.sp,fontWeight=FontWeight.Black,color=Color(0xFF14883E))
                             Text("Completion",fontSize=8.sp,color=Color(0xFF14883E))
                         }
                     }
@@ -455,7 +461,9 @@ private fun DashboardScreen(token:String,boot:BootstrapData,onTasks:()->Unit,onS
         item{
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){
                 Text(if(personal)"TODAY & MY TASKS" else "COMPANY TODAY",fontSize=12.sp,fontWeight=FontWeight.Black,color=Color(0xFF0B1C2B))
-                TextButton(onClick=onTasks,contentPadding=PaddingValues(horizontal=2.dp,vertical=0.dp)){Text("View All →",fontSize=10.sp,fontWeight=FontWeight.Bold,color=Color(0xFF008A3E))}
+                TextButton(onClick={onTaskTab("today")},contentPadding=PaddingValues(horizontal=2.dp,vertical=0.dp)){
+                    Text("View All →",fontSize=10.sp,fontWeight=FontWeight.Bold,color=Color(0xFF008A3E))
+                }
             }
         }
 
@@ -466,36 +474,36 @@ private fun DashboardScreen(token:String,boot:BootstrapData,onTasks:()->Unit,onS
         } else {
             item{
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)){
-                    DashboardMetricCard("Today",todayCount,"Assigned for today",Icons.Default.Schedule,Color(0xFF246BFD),Modifier.weight(1f))
-                    DashboardMetricCard("Completed Today",completed,"Done & verified",Icons.Default.CheckCircle,Color(0xFF00A56A),Modifier.weight(1f))
+                    DashboardMetricCard("Today",todayCount,"Assigned for today",Icons.Default.Schedule,Color(0xFF246BFD),Modifier.weight(1f)){onTaskTab("today")}
+                    DashboardMetricCard("Completed Today",completed,"Done & verified",Icons.Default.CheckCircle,Color(0xFF00A56A),Modifier.weight(1f)){onTaskTab("completed")}
                 }
             }
             item{
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)){
-                    DashboardMetricCard(if(personal)"My Overdue" else "Company Overdue",overdue,"Requires action",Icons.Default.WarningAmber,Color(0xFFE60023),Modifier.weight(1f))
-                    DashboardMetricCard(if(personal)"My Not Done" else "Company Not Done",notDone,"Past missed tasks",Icons.Default.Cancel,Color(0xFFF06A00),Modifier.weight(1f))
+                    DashboardMetricCard(if(personal)"My Overdue" else "Company Overdue",overdue,"Requires action",Icons.Default.WarningAmber,Color(0xFFE60023),Modifier.weight(1f)){onTaskTab("overdue")}
+                    DashboardMetricCard(if(personal)"My Not Done" else "Company Not Done",notDone,"Past missed tasks",Icons.Default.Cancel,Color(0xFFF06A00),Modifier.weight(1f)){onTaskTab("notdone")}
                 }
             }
             item{
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)){
-                    DashboardMetricCard("On Leave",onLeave,"Leave marked",Icons.Default.PersonOff,Color(0xFF53657D),Modifier.weight(1f))
-                    DashboardMetricCard(if(personal)"My Open Tickets" else "Open Tickets",openTickets,"Pending resolution",Icons.Default.SupportAgent,Color(0xFF9B23FF),Modifier.weight(1f))
+                    DashboardMetricCard("On Leave",onLeave,"Leave marked",Icons.Default.PersonOff,Color(0xFF53657D),Modifier.weight(1f)){onTaskTab("onleave")}
+                    DashboardMetricCard(if(personal)"My Open Tickets" else "Open Tickets",openTickets,"Pending resolution",Icons.Default.SupportAgent,Color(0xFF9C27FF),Modifier.weight(1f)){onTickets()}
                 }
             }
         }
 
         item{
             Card(
-                shape=RoundedCornerShape(14.dp),
+                shape=RoundedCornerShape(16.dp),
                 colors=CardDefaults.cardColors(containerColor=Color.White),
                 border=androidx.compose.foundation.BorderStroke(1.dp,Color(0xFFD9E2EA))
             ){
                 Column(Modifier.padding(12.dp)){
-                    Text("QUICK OPERATIONS",fontSize=10.sp,fontWeight=FontWeight.Black,color=Color(0xFF0B1C2B))
-                    Spacer(Modifier.height(9.dp))
+                    Text("QUICK OPERATIONS",fontSize=10.sp,fontWeight=FontWeight.Black,color=Color(0xFF172A3A))
+                    Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
-                        QuickOperation("My Today Tasks",Icons.Default.TaskAlt,Modifier.weight(1f),onTasks)
-                        QuickOperation("Shift Roster",Icons.Default.CalendarMonth,Modifier.weight(1f),onShifts)
+                        QuickOperation("My Today Tasks",Icons.Default.TaskAlt,Modifier.weight(1f)){onTaskTab("today")}
+                        QuickOperation("Shift Roster",Icons.Default.CalendarMonth,Modifier.weight(1f)){onShifts()}
                     }
                 }
             }
@@ -505,9 +513,17 @@ private fun DashboardScreen(token:String,boot:BootstrapData,onTasks:()->Unit,onS
 }
 
 @Composable
-private fun DashboardMetricCard(title:String,value:Int,subtitle:String,icon:androidx.compose.ui.graphics.vector.ImageVector,accent:Color,modifier:Modifier){
+private fun DashboardMetricCard(
+    title:String,
+    value:Int,
+    subtitle:String,
+    icon:androidx.compose.ui.graphics.vector.ImageVector,
+    accent:Color,
+    modifier:Modifier,
+    onClick:()->Unit
+){
     Card(
-        modifier=modifier.height(86.dp),
+        modifier=modifier.height(86.dp).clickable(onClick=onClick),
         shape=RoundedCornerShape(13.dp),
         colors=CardDefaults.cardColors(containerColor=Color.White),
         border=androidx.compose.foundation.BorderStroke(1.dp,if(title.contains("Overdue"))Color(0xFFFFB4B4) else Color(0xFFDCE4EA))
@@ -518,11 +534,15 @@ private fun DashboardMetricCard(title:String,value:Int,subtitle:String,icon:andr
                 Icon(icon,null,tint=accent,modifier=Modifier.size(16.dp))
             }
             Text(value.toString(),fontSize=20.sp,fontWeight=FontWeight.Black,color=accent)
-            Text(subtitle,fontSize=8.sp,color=Color(0xFF8290A3))
+            Row(verticalAlignment=Alignment.CenterVertically){
+                Text(subtitle,fontSize=8.sp,color=Color(0xFF8290A3),modifier=Modifier.weight(1f))
+                Icon(Icons.Default.ChevronRight,null,tint=Color(0xFFA7B2BF),modifier=Modifier.size(13.dp))
+            }
         }
     }
 }
 
+@Composable
 @Composable
 private fun QuickOperation(label:String,icon:androidx.compose.ui.graphics.vector.ImageVector,modifier:Modifier,onClick:()->Unit){
     Surface(
@@ -541,31 +561,55 @@ private fun QuickOperation(label:String,icon:androidx.compose.ui.graphics.vector
 }
 
 @Composable
-private fun TasksScreen(token:String,boot:BootstrapData){
+private fun TasksScreen(token:String,boot:BootstrapData,initialTab:String="today"){
     var scopeSel by remember{mutableStateOf("MY")}
-    var tab by remember{mutableStateOf("today")}
+    var tab by remember(initialTab){mutableStateOf(initialTab)}
     var result by remember{mutableStateOf<TaskResult?>(null)}
     var err by remember{mutableStateOf("")}
     var busyId by remember{mutableStateOf("")}
     val scope=rememberCoroutineScope()
-    fun reload(){
+
+    fun reload(force:Boolean=false){
         scope.launch{
             err=""
-            runCatching{ApiClient.tasks(token,scopeSel,tab)}
+            runCatching{ApiClient.tasks(token,scopeSel,tab,force)}
                 .onSuccess{result=it}
                 .onFailure{err=it.message?:""}
         }
     }
-    LaunchedEffect(scopeSel,tab){reload()}
-    Column(Modifier.fillMaxSize()){
-        if(boot.canViewTeamTasks) Segmented(listOf("MY" to "My","TEAM" to "Team"),scopeSel){scopeSel=it}
-        TaskTabs(tab){tab=it}
+
+    LaunchedEffect(scopeSel,tab){reload(false)}
+
+    Column(Modifier.fillMaxSize().background(Color(0xFFF7FAF8))){
+        if(boot.canViewTeamTasks) Segmented(listOf("MY" to "My","TEAM" to "Team"),scopeSel){scopeSel=it;result=null}
+        TaskTabs(tab){tab=it;result=null}
         if(err.isNotBlank()) ErrorCard(err)
         val list=result?.tasks
         if(list==null){
             LinearProgressIndicator(Modifier.fillMaxWidth(),color=LpplGreen)
+        } else if(list.isEmpty() && tab=="today" && scopeSel=="MY"){
+            Box(Modifier.fillMaxSize().padding(18.dp),contentAlignment=Alignment.Center){
+                Card(
+                    colors=CardDefaults.cardColors(containerColor=Color(0xFFE9FFF0)),
+                    border=androidx.compose.foundation.BorderStroke(1.dp,Color(0xFF75DEA0)),
+                    shape=RoundedCornerShape(22.dp)
+                ){
+                    Column(
+                        Modifier.fillMaxWidth().padding(horizontal=24.dp,vertical=34.dp),
+                        horizontalAlignment=Alignment.CenterHorizontally
+                    ){
+                        Surface(shape=CircleShape,color=Color(0xFF2FC95A)){
+                            Icon(Icons.Default.TaskAlt,null,tint=Color.White,modifier=Modifier.padding(14.dp).size(34.dp))
+                        }
+                        Spacer(Modifier.height(16.dp))
+                        Text("All tasks are completed",fontSize=24.sp,fontWeight=FontWeight.Black,color=Color(0xFF0B6D2B))
+                        Spacer(Modifier.height(7.dp))
+                        Text("Great work! You’re all caught up for today.",fontSize=13.sp,color=Color(0xFF4E725B))
+                    }
+                }
+            }
         } else if(list.isEmpty()){
-            EmptyState("No ${tab.replaceFirstChar{it.uppercase()}} tasks")
+            EmptyState("No " + tab.replaceFirstChar{it.uppercase()} + " tasks")
         } else {
             LazyColumn(Modifier.fillMaxSize().padding(horizontal=10.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
                 items(list,key={it.instanceId}){task->
@@ -574,10 +618,9 @@ private fun TasksScreen(token:String,boot:BootstrapData){
                         scope.launch{
                             runCatching{ApiClient.completeTask(token,task.instanceId)}
                                 .onSuccess{
-                                    // Required LPPL behavior: after Done, remain on Today.
                                     tab="today"
                                     result=result?.copy(tasks=result!!.tasks.filterNot{it.instanceId==task.instanceId})
-                                    reload()
+                                    launch{ApiClient.prefetchTaskBundle(token)}
                                 }
                                 .onFailure{err=it.message?:"Unable to complete task"}
                             busyId=""
