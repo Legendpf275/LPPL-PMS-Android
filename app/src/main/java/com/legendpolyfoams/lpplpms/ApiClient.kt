@@ -108,6 +108,16 @@ object ApiClient {
 
     private fun parseUser(o:JsonObject)=User(s(o,"userId"),s(o,"employeeId"),s(o,"name"),s(o,"department"),s(o,"designation"),s(o,"effectiveRole").ifBlank{"Employee"},b(o,"isManager"),s(o,"profilePhotoUrl"))
     private fun parseTask(o:JsonObject)=TaskItem(s(o,"taskId"),s(o,"instanceId"),s(o,"title"),s(o,"category"),s(o,"department"),s(o,"employeeName"),s(o,"employeeId"),s(o,"dueDate"),s(o,"frequency"),s(o,"status").ifBlank{"Pending"},b(o,"proofRequired"),b(o,"canComplete"),b(o,"canTransfer"))
+    private fun dedupeTasks(rows:List<TaskItem>):List<TaskItem>{
+        val unique=linkedMapOf<String,TaskItem>()
+        rows.forEach{task->
+            val logical=task.taskId.ifBlank{task.instanceId}
+            val key=listOf(task.employeeId,logical,task.dueDate.take(10)).joinToString("|")
+            val previous=unique[key]
+            if(previous==null || (task.status.equals("Completed",true) && !previous.status.equals("Completed",true))) unique[key]=task
+        }
+        return unique.values.toList()
+    }
     private fun parseTicket(o:JsonObject)=TicketItem(
         s(o,"ticketId"),s(o,"description"),s(o,"department"),s(o,"category"),s(o,"urgency"),s(o,"status"),
         s(o,"raisedByName"),s(o,"raisedByEmployeeId"),s(o,"assignedToName"),s(o,"assignedToEmployeeId"),
@@ -153,7 +163,7 @@ object ApiClient {
         d.get("counts")?.takeIf{it.isJsonObject}?.asJsonObject?.entrySet()?.forEach{counts[it.key]=it.value.asInt}
         val now=System.currentTimeMillis()
         listOf("today","upcoming","overdue","notdone","onleave","completed").forEach { tab ->
-            val list=arr(tabs,tab).map{parseTask(it.asJsonObject)}
+            val list=dedupeTasks(arr(tabs,tab).map{parseTask(it.asJsonObject)})
             taskCache["$token|MY|$tab"]=CacheEntry(now,TaskResult(list,counts))
         }
     }
@@ -174,9 +184,10 @@ object ApiClient {
         if(!force) taskCache[key]?.takeIf{now-it.at<CACHE_MS}?.let{return it.value}
         val p=JsonObject().apply{addProperty("scope",scope);addProperty("tab",tab)}
         val d=jo(call("get_tasks",token,p),"data")
-        val list=arr(d,"tasks").map{parseTask(it.asJsonObject)}
+        val list=dedupeTasks(arr(d,"tasks").map{parseTask(it.asJsonObject)})
         val counts=mutableMapOf<String,Int>()
         d.get("counts")?.takeIf{it.isJsonObject}?.asJsonObject?.entrySet()?.forEach{counts[it.key]=it.value.asInt}
+        counts[tab]=list.size
         return TaskResult(list,counts).also{taskCache[key]=CacheEntry(now,it)}
     }
 
