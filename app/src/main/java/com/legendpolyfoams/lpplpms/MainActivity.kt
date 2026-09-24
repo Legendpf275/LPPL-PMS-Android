@@ -828,7 +828,18 @@ private fun TicketsScreen(token:String,boot:BootstrapData){
     var category by remember{mutableStateOf("ALL")}
     var urgency by remember{mutableStateOf("ALL")}
     var selectedTicket by remember{mutableStateOf<TicketItem?>(null)}
+    var createOpen by remember{mutableStateOf(false)}
+    var createBusy by remember{mutableStateOf(false)}
+    var createError by remember{mutableStateOf("")}
+    var newDepartment by remember{mutableStateOf("")}
+    var newUser by remember{mutableStateOf<TicketUser?>(null)}
+    var newCategory by remember{mutableStateOf("")}
+    var newPriority by remember{mutableStateOf("")}
+    var newDate by remember{mutableStateOf(LocalDate.now().toString())}
+    var newDescription by remember{mutableStateOf("")}
+    var newMachine by remember{mutableStateOf("")}
     var err by remember{mutableStateOf("")}
+    val scope=rememberCoroutineScope()
 
     LaunchedEffect(Unit){
         runCatching{ApiClient.tickets(token)}.onSuccess{data=it}.onFailure{err=it.message?:""}
@@ -934,12 +945,51 @@ private fun TicketsScreen(token:String,boot:BootstrapData){
         }
 
         FloatingActionButton(
-            onClick={},
+            onClick={createError="";createOpen=true},
             containerColor=Color(0xFF31B84B),
             contentColor=Color.White,
             modifier=Modifier.align(Alignment.BottomEnd).padding(16.dp),
             shape=RoundedCornerShape(16.dp)
         ){Icon(Icons.Default.Add,"New Ticket")}
+
+        if(createOpen){
+            AlertDialog(
+                onDismissRequest={if(!createBusy)createOpen=false},
+                title={Text("Raise Help Ticket",fontWeight=FontWeight.Bold)},
+                text={Column(Modifier.heightIn(max=510.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(9.dp)){
+                    Text("Route the issue to the correct doer.",fontSize=12.sp,color=TextMuted)
+                    TicketSelect("Doer department *",newDepartment,boot.departments){newDepartment=it;newUser=null}
+                    TicketSelect("Doer *",newUser?.let{it.employeeId+" · "+it.name}.orEmpty(),
+                        data?.users?.filter{it.department==newDepartment}?.map{it.employeeId+" · "+it.name}.orEmpty()) { label ->
+                        newUser=data?.users?.firstOrNull{it.department==newDepartment && it.employeeId+" · "+it.name==label}
+                    }
+                    TicketSelect("Category *",newCategory,boot.ticketCategories){newCategory=it}
+                    TicketSelect("Urgency *",newPriority,boot.priorities){newPriority=it}
+                    OutlinedTextField(newDate,{newDate=it},label={Text("Due date * (YYYY-MM-DD)")},singleLine=true,modifier=Modifier.fillMaxWidth())
+                    OutlinedTextField(newMachine,{newMachine=it},label={Text("Machine / Area")},singleLine=true,modifier=Modifier.fillMaxWidth())
+                    OutlinedTextField(newDescription,{newDescription=it},label={Text("Description *")},minLines=3,modifier=Modifier.fillMaxWidth())
+                    if(createError.isNotBlank())Text(createError,color=Color.Red,fontSize=12.sp)
+                }},
+                confirmButton={Button(onClick={
+                    val parsed=runCatching{LocalDate.parse(newDate)}.getOrNull()
+                    when {
+                        newDepartment.isBlank()||newUser==null||newCategory.isBlank()||newPriority.isBlank()||newDescription.isBlank()->createError="Complete all required fields"
+                        parsed==null||parsed.isBefore(LocalDate.now())->createError="Enter a valid due date (YYYY-MM-DD)"
+                        else->{
+                            createBusy=true;createError=""
+                            scope.launch{
+                                runCatching{ApiClient.createTicket(token,newDepartment,newUser!!.userId,newCategory,newPriority,newDate,newDescription.trim(),newMachine.trim())}
+                                    .onSuccess{createOpen=false;newDescription="";newMachine="";data=null
+                                        runCatching{ApiClient.tickets(token,true)}.onSuccess{data=it;scopeSel="MY";ownerSel="CREATED"}}
+                                    .onFailure{createError=it.message?:"Could not create ticket"}
+                                createBusy=false
+                            }
+                        }
+                    }
+                },enabled=!createBusy){Text(if(createBusy)"Submitting…" else "Submit Ticket")}},
+                dismissButton={TextButton(onClick={createOpen=false},enabled=!createBusy){Text("Cancel")}}
+            )
+        }
 
         selectedTicket?.let{t->
             AlertDialog(
@@ -964,6 +1014,23 @@ private fun TicketsScreen(token:String,boot:BootstrapData){
                 },
                 confirmButton={TextButton(onClick={selectedTicket=null}){Text("Close")}}
             )
+        }
+    }
+}
+
+@Composable
+private fun TicketSelect(label:String,value:String,options:List<String>,onSelect:(String)->Unit){
+    var expanded by remember{mutableStateOf(false)}
+    Box{
+        OutlinedButton(onClick={expanded=true},enabled=options.isNotEmpty(),modifier=Modifier.fillMaxWidth()){
+            Column(Modifier.weight(1f)){
+                Text(label,fontSize=11.sp,color=TextMuted)
+                Text(value.ifBlank{"Select"},maxLines=1,overflow=TextOverflow.Ellipsis)
+            }
+            Text("▾")
+        }
+        DropdownMenu(expanded=expanded,onDismissRequest={expanded=false}){
+            options.forEach{option->DropdownMenuItem(text={Text(option)},onClick={onSelect(option);expanded=false})}
         }
     }
 }
