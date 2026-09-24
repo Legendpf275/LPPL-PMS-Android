@@ -28,6 +28,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 private val LpplGreen = Color(0xFF39A844)
 private val LpplDark = Color(0xFF16752A)
@@ -246,7 +249,7 @@ private fun LoginScreen(busy:Boolean,error:String,onLogin:(String,String)->Unit)
     }
 }
 
-enum class Page { HOME,TASKS,TICKETS,ALERTS,MORE }
+enum class Page { HOME,TASKS,TICKETS,SHIFTS,ALERTS,MORE }
 
 @Composable
 private fun MainShell(token:String, boot:BootstrapData, onLogout:()->Unit){
@@ -254,15 +257,16 @@ private fun MainShell(token:String, boot:BootstrapData, onLogout:()->Unit){
     Scaffold(
         topBar={TopBar(page,boot.user,boot.unreadCount){page=Page.ALERTS}},
         bottomBar={BottomNav(page){page=it}},
-        containerColor=Bg
+        containerColor=Color(0xFFF7FAF8)
     ){pad ->
         Box(Modifier.padding(pad).fillMaxSize()){
             when(page){
-                Page.HOME->DashboardScreen(token,boot)
+                Page.HOME->DashboardScreen(token,boot,onTasks={page=Page.TASKS},onShifts={page=Page.SHIFTS})
                 Page.TASKS->TasksScreen(token,boot)
                 Page.TICKETS->TicketsScreen(token,boot)
+                Page.SHIFTS->ShiftRosterScreen(token,boot)
                 Page.ALERTS->AlertsScreen(token)
-                Page.MORE->MoreScreen(boot,onLogout)
+                Page.MORE->MoreScreen(boot,onShiftRoster={page=Page.SHIFTS},onLogout=onLogout)
             }
         }
     }
@@ -271,122 +275,226 @@ private fun MainShell(token:String, boot:BootstrapData, onLogout:()->Unit){
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TopBar(page:Page,user:User,unread:Int,onBell:()->Unit){
+    val title=when(page){
+        Page.HOME->"PMS Dashboard"
+        Page.TASKS->"Tasks"
+        Page.TICKETS->"Help Tickets"
+        Page.SHIFTS->"Shift Roster"
+        Page.ALERTS->"Notifications"
+        Page.MORE->"More"
+    }
     TopAppBar(
-        title={Text(when(page){
-            Page.HOME->"Dashboard"
-            Page.TASKS->"Tasks"
-            Page.TICKETS->"Help Tickets"
-            Page.ALERTS->"Notifications"
-            Page.MORE->"More"
-        },fontWeight=FontWeight.Bold)},
-        actions={
-            IconButton(onClick=onBell){
-                BadgedBox(badge={if(unread>0) Badge{Text(if(unread>99)"99+" else "$unread")}}){
-                    Icon(Icons.Default.Notifications,"Notifications")
+        title={
+            Row(verticalAlignment=Alignment.CenterVertically){
+                Surface(modifier=Modifier.size(34.dp),shape=RoundedCornerShape(8.dp),color=LpplGreen){
+                    Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){
+                        Column(horizontalAlignment=Alignment.CenterHorizontally){
+                            Text("LPPL",fontSize=9.sp,fontWeight=FontWeight.Black,color=Color.White)
+                            Text("PMS",fontSize=7.sp,fontWeight=FontWeight.Bold,color=Color.White)
+                        }
+                    }
+                }
+                Spacer(Modifier.width(9.dp))
+                Column{
+                    Text(title,fontWeight=FontWeight.Black,fontSize=17.sp,color=Color(0xFF0D1B2A))
+                    Text("Legend Polyfoams",fontSize=9.sp,color=Color(0xFF64748B))
                 }
             }
-            Box(Modifier.padding(end=12.dp).size(38.dp).background(Color.White,CircleShape),contentAlignment=Alignment.Center){
-                Text(
-                    user.name.trim().split(" ").mapNotNull{it.firstOrNull()?.toString()}.take(2).joinToString(""),
-                    color=LpplDark,fontWeight=FontWeight.Black
-                )
+        },
+        actions={
+            IconButton(onClick=onBell){
+                BadgedBox(badge={if(unread>0) Badge(containerColor=Color(0xFFE60023)){Text(if(unread>99)"99+" else "$unread",color=Color.White)}}){
+                    Icon(Icons.Default.Notifications,"Notifications",tint=Color(0xFF26364A))
+                }
+            }
+            Surface(
+                modifier=Modifier.padding(end=10.dp),
+                shape=RoundedCornerShape(24.dp),
+                color=Color(0xFFE9FFF0),
+                border=androidx.compose.foundation.BorderStroke(1.dp,Color(0xFF7EE6A2))
+            ){
+                Row(Modifier.padding(horizontal=8.dp,vertical=5.dp),verticalAlignment=Alignment.CenterVertically){
+                    Box(Modifier.size(24.dp).background(LpplGreen,CircleShape),contentAlignment=Alignment.Center){
+                        Text(user.name.trim().firstOrNull()?.uppercaseChar()?.toString()?:"U",color=Color.White,fontWeight=FontWeight.Black,fontSize=11.sp)
+                    }
+                    Spacer(Modifier.width(5.dp))
+                    Text(user.effectiveRole,fontSize=10.sp,color=Color(0xFF16813A),fontWeight=FontWeight.SemiBold)
+                }
             }
         },
-        colors=TopAppBarDefaults.topAppBarColors(containerColor=LpplGreen,titleContentColor=Color.White,actionIconContentColor=Color.White)
+        colors=TopAppBarDefaults.topAppBarColors(containerColor=Color.White)
     )
 }
 
 @Composable
 private fun BottomNav(page:Page,onChange:(Page)->Unit){
-    NavigationBar(containerColor=Color.White){
+    NavigationBar(containerColor=Color.White,tonalElevation=3.dp){
         listOf(
-            Page.HOME to Icons.Default.Home,
-            Page.TASKS to Icons.Default.Checklist,
-            Page.TICKETS to Icons.Default.ConfirmationNumber,
-            Page.ALERTS to Icons.Default.Notifications,
+            Page.HOME to Icons.Default.Dashboard,
+            Page.TASKS to Icons.Default.TaskAlt,
+            Page.TICKETS to Icons.Default.SupportAgent,
+            Page.SHIFTS to Icons.Default.CalendarMonth,
             Page.MORE to Icons.Default.MoreHoriz
         ).forEach{(p,ic)->
             NavigationBarItem(
                 selected=page==p,
                 onClick={onChange(p)},
+                colors=NavigationBarItemDefaults.colors(
+                    selectedIconColor=LpplGreen,selectedTextColor=LpplDark,
+                    indicatorColor=Color(0xFFE7F8EB),
+                    unselectedIconColor=Color(0xFF66758B),unselectedTextColor=Color(0xFF66758B)
+                ),
                 icon={Icon(ic,null)},
                 label={Text(when(p){
-                    Page.HOME->"Home";Page.TASKS->"Tasks";Page.TICKETS->"Tickets";Page.ALERTS->"Alerts";Page.MORE->"More"
-                })}
+                    Page.HOME->"Home";Page.TASKS->"Tasks";Page.TICKETS->"Tickets";Page.SHIFTS->"Shifts";Page.MORE->"More"
+                    else->""
+                },fontSize=10.sp)}
             )
         }
     }
 }
 
 @Composable
-private fun DashboardScreen(token:String,boot:BootstrapData){
+private fun DashboardScreen(token:String,boot:BootstrapData,onTasks:()->Unit,onShifts:()->Unit){
     var data by remember{mutableStateOf<DashboardData?>(null)}
     var err by remember{mutableStateOf("")}
+    val today=remember{LocalDate.now()}
+    val dateText=remember(today){today.format(DateTimeFormatter.ofPattern("EEEE, dd MMM yyyy",Locale.ENGLISH))}
     LaunchedEffect(Unit){
         runCatching{ApiClient.dashboard(token)}.onSuccess{data=it}.onFailure{err=it.message?:""}
+        launch { ApiClient.prefetchTodayTasks(token) }
     }
-    LazyColumn(Modifier.fillMaxSize().padding(14.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){
+
+    val raw=data?.raw
+    val mode=raw?.get("mode")?.asString.orEmpty()
+    val counts=raw?.getAsJsonObject("counts")
+    val cards=raw?.getAsJsonObject("cards")
+    val personal=mode=="PERSONAL" || mode.isBlank()
+    val todayCount=if(personal) counts?.get("today")?.asInt?:0 else cards?.get("today")?.asInt?:0
+    val completed=if(personal) counts?.get("completedToday")?.asInt?:0 else cards?.get("completedToday")?.asInt?:0
+    val overdue=if(personal) counts?.get("overdue")?.asInt?:0 else cards?.get("overdue")?.asInt?:0
+    val notDone=if(personal) counts?.get("notDone")?.asInt?:0 else cards?.get("notDone")?.asInt?:0
+    val onLeave=if(personal) counts?.get("onLeave")?.asInt?:0 else cards?.get("onLeave")?.asInt?:0
+    val openTickets=if(personal) counts?.get("openTickets")?.asInt?:0 else cards?.get("openTickets")?.asInt?:0
+    val completion=if(personal) raw?.get("completionRate")?.asInt?:0 else cards?.get("completionRate")?.asInt?:0
+
+    LazyColumn(
+        Modifier.fillMaxSize().background(Color(0xFFF7FAF8)).padding(horizontal=16.dp,vertical=14.dp),
+        verticalArrangement=Arrangement.spacedBy(12.dp)
+    ){
         item{
-            Text("Good day, ${boot.user.name}",fontWeight=FontWeight.Black,fontSize=24.sp,color=TextPrimary)
-            Text("${boot.user.designation} · ${boot.user.department}",fontSize=13.sp,color=TextMuted)
-        }
-        if(data==null){
-            item{if(err.isBlank()) LinearProgressIndicator(Modifier.fillMaxWidth(),color=LpplGreen) else ErrorCard(err)}
-        } else {
-            val raw=data!!.raw
-            val mode=raw.get("mode")?.asString.orEmpty()
-            if(mode=="PERSONAL"){
-                val c=raw.getAsJsonObject("counts")
-                val metrics=listOf(
-                    "Today" to (c?.get("today")?.asInt?:0),
-                    "Completed Today" to (c?.get("completedToday")?.asInt?:0),
-                    "My Overdue" to (c?.get("overdue")?.asInt?:0),
-                    "My Not Done" to (c?.get("notDone")?.asInt?:0),
-                    "On Leave" to (c?.get("onLeave")?.asInt?:0),
-                    "Open Tickets" to (c?.get("openTickets")?.asInt?:0)
-                )
-                items(metrics.chunked(2)){row->
-                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)){
-                        row.forEach{m->MetricCard(m.first,m.second.toString(),Modifier.weight(1f))}
-                        if(row.size==1)Spacer(Modifier.weight(1f))
+            Card(
+                shape=RoundedCornerShape(16.dp),
+                colors=CardDefaults.cardColors(containerColor=Color.White),
+                border=androidx.compose.foundation.BorderStroke(1.dp,Color(0xFFD9E2EA))
+            ){
+                Row(Modifier.fillMaxWidth().padding(14.dp),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){
+                    Column(Modifier.weight(1f)){
+                        Row(verticalAlignment=Alignment.CenterVertically){
+                            Icon(Icons.Default.CalendarMonth,null,tint=Color(0xFF00A56A),modifier=Modifier.size(15.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(dateText,fontSize=10.sp,color=Color(0xFF00855A),fontWeight=FontWeight.Bold)
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        Text("Hello, \${boot.user.name.ifBlank{"Employee"}}",fontSize=16.sp,fontWeight=FontWeight.Black,color=Color(0xFF07111F))
+                        Spacer(Modifier.height(2.dp))
+                        Text("\${boot.user.department.ifBlank{"LPPL"}} • \${boot.user.effectiveRole}",fontSize=10.sp,color=Color(0xFF557085))
                     }
-                }
-                item{MetricCard("Completion Rate","${raw.get("completionRate")?.asInt?:0}%",Modifier.fillMaxWidth())}
-                raw.getAsJsonObject("team")?.let{t->
-                    item{Text("Team",fontWeight=FontWeight.Bold,fontSize=18.sp)}
-                    item{
-                        Row(horizontalArrangement=Arrangement.spacedBy(10.dp)){
-                            MetricCard("Employees",(t.get("employees")?.asInt?:0).toString(),Modifier.weight(1f))
-                            MetricCard("Overdue",(t.get("overdue")?.asInt?:0).toString(),Modifier.weight(1f))
+                    Surface(shape=RoundedCornerShape(13.dp),color=Color(0xFFE9FFF1),border=androidx.compose.foundation.BorderStroke(1.dp,Color(0xFF82E9A9))){
+                        Column(Modifier.padding(horizontal=13.dp,vertical=9.dp),horizontalAlignment=Alignment.CenterHorizontally){
+                            Text("HISTORICAL",fontSize=9.sp,fontWeight=FontWeight.Bold,color=Color(0xFF14763B))
+                            Text("\${completion}%",fontSize=21.sp,fontWeight=FontWeight.Black,color=Color(0xFF14883E))
+                            Text("Completion",fontSize=8.sp,color=Color(0xFF14883E))
                         }
                     }
                 }
-            } else {
-                val cards=raw.getAsJsonObject("cards")
-                item{
-                    Row(horizontalArrangement=Arrangement.spacedBy(10.dp)){
-                        MetricCard("Company Overdue",(cards?.get("overdue")?.asInt?:0).toString(),Modifier.weight(1f))
-                        MetricCard("Company Not Done",(cards?.get("notDone")?.asInt?:0).toString(),Modifier.weight(1f))
-                    }
+            }
+        }
+
+        item{
+            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){
+                Text(if(personal)"TODAY & MY TASKS" else "COMPANY TODAY",fontSize=12.sp,fontWeight=FontWeight.Black,color=Color(0xFF0B1C2B))
+                TextButton(onClick=onTasks,contentPadding=PaddingValues(horizontal=2.dp,vertical=0.dp)){Text("View All →",fontSize=10.sp,fontWeight=FontWeight.Bold,color=Color(0xFF008A3E))}
+            }
+        }
+
+        if(data==null && err.isBlank()){
+            item{LinearProgressIndicator(Modifier.fillMaxWidth(),color=LpplGreen)}
+        } else if(err.isNotBlank()){
+            item{ErrorCard(err)}
+        } else {
+            item{
+                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)){
+                    DashboardMetricCard("Today",todayCount,"Assigned for today",Icons.Default.Schedule,Color(0xFF246BFD),Modifier.weight(1f))
+                    DashboardMetricCard("Completed Today",completed,"Done & verified",Icons.Default.CheckCircle,Color(0xFF00A56A),Modifier.weight(1f))
                 }
-                item{
-                    Row(horizontalArrangement=Arrangement.spacedBy(10.dp)){
-                        MetricCard("Open Tickets",(cards?.get("openTickets")?.asInt?:0).toString(),Modifier.weight(1f))
-                        MetricCard("Completion Rate","${cards?.get("completionRate")?.asInt?:0}%",Modifier.weight(1f))
+            }
+            item{
+                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)){
+                    DashboardMetricCard(if(personal)"My Overdue" else "Company Overdue",overdue,"Requires action",Icons.Default.WarningAmber,Color(0xFFE60023),Modifier.weight(1f))
+                    DashboardMetricCard(if(personal)"My Not Done" else "Company Not Done",notDone,"Past missed tasks",Icons.Default.Cancel,Color(0xFFF06A00),Modifier.weight(1f))
+                }
+            }
+            item{
+                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)){
+                    DashboardMetricCard("On Leave",onLeave,"Leave marked",Icons.Default.PersonOff,Color(0xFF53657D),Modifier.weight(1f))
+                    DashboardMetricCard(if(personal)"My Open Tickets" else "Open Tickets",openTickets,"Pending resolution",Icons.Default.SupportAgent,Color(0xFF9B23FF),Modifier.weight(1f))
+                }
+            }
+        }
+
+        item{
+            Card(
+                shape=RoundedCornerShape(14.dp),
+                colors=CardDefaults.cardColors(containerColor=Color.White),
+                border=androidx.compose.foundation.BorderStroke(1.dp,Color(0xFFD9E2EA))
+            ){
+                Column(Modifier.padding(12.dp)){
+                    Text("QUICK OPERATIONS",fontSize=10.sp,fontWeight=FontWeight.Black,color=Color(0xFF0B1C2B))
+                    Spacer(Modifier.height(9.dp))
+                    Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
+                        QuickOperation("My Today Tasks",Icons.Default.TaskAlt,Modifier.weight(1f),onTasks)
+                        QuickOperation("Shift Roster",Icons.Default.CalendarMonth,Modifier.weight(1f),onShifts)
                     }
                 }
             }
+        }
+        item{Spacer(Modifier.height(4.dp))}
+    }
+}
+
+@Composable
+private fun DashboardMetricCard(title:String,value:Int,subtitle:String,icon:androidx.compose.ui.graphics.vector.ImageVector,accent:Color,modifier:Modifier){
+    Card(
+        modifier=modifier.height(86.dp),
+        shape=RoundedCornerShape(13.dp),
+        colors=CardDefaults.cardColors(containerColor=Color.White),
+        border=androidx.compose.foundation.BorderStroke(1.dp,if(title.contains("Overdue"))Color(0xFFFFB4B4) else Color(0xFFDCE4EA))
+    ){
+        Column(Modifier.fillMaxSize().padding(11.dp),verticalArrangement=Arrangement.SpaceBetween){
+            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){
+                Text(title,fontSize=10.sp,color=Color(0xFF27405A))
+                Icon(icon,null,tint=accent,modifier=Modifier.size(16.dp))
+            }
+            Text(value.toString(),fontSize=20.sp,fontWeight=FontWeight.Black,color=accent)
+            Text(subtitle,fontSize=8.sp,color=Color(0xFF8290A3))
         }
     }
 }
 
 @Composable
-private fun MetricCard(label:String,value:String,modifier:Modifier){
-    Card(modifier,shape=RoundedCornerShape(14.dp),colors=CardDefaults.cardColors(containerColor=Color.White)){
-        Column(Modifier.padding(14.dp)){
-            Text(label.uppercase(),fontSize=10.sp,color=TextMuted,fontWeight=FontWeight.Bold)
-            Spacer(Modifier.height(4.dp))
-            Text(value,fontSize=24.sp,fontWeight=FontWeight.Black,color=if(label.contains("Overdue")||label.contains("Not Done"))Color(0xFFD32F2F) else LpplGreen)
+private fun QuickOperation(label:String,icon:androidx.compose.ui.graphics.vector.ImageVector,modifier:Modifier,onClick:()->Unit){
+    Surface(
+        modifier=modifier.clickable(onClick=onClick),
+        shape=RoundedCornerShape(10.dp),
+        color=Color(0xFFF8FBFD),
+        border=androidx.compose.foundation.BorderStroke(1.dp,Color(0xFFD7E1E8))
+    ){
+        Row(Modifier.padding(horizontal=10.dp,vertical=11.dp),verticalAlignment=Alignment.CenterVertically){
+            Icon(icon,null,tint=Color(0xFF536D86),modifier=Modifier.size(16.dp))
+            Spacer(Modifier.width(7.dp))
+            Text(label,Modifier.weight(1f),fontSize=10.sp,fontWeight=FontWeight.SemiBold,color=Color(0xFF162A3B))
+            Text("→",color=Color(0xFF71849A),fontSize=14.sp)
         }
     }
 }
