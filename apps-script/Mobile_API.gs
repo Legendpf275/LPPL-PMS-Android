@@ -21,6 +21,7 @@ function doPost(e) {
       case 'complete_task': out = mobileCompleteTask_(body); break;
       case 'get_transfer_targets': out = mobileTransferTargets_(body.token); break;
       case 'transfer_task': out = mobileTransferTask_(body); break;
+      case 'transfer_tasks': out = mobileTransferTasks_(body); break;
       case 'get_tickets': out = mobileTickets_(body.token); break;
       case 'create_ticket': out = mobileCreateTicket_(body); break;
       case 'ticket_messages': out = mobileData_(api_getTicketMessages(body.token, body.ticketId)); break;
@@ -178,7 +179,7 @@ function mobileTransferTargets_(token) {
   const me=requireSession_(token,null);
   assertTeamTaskAccessV40_(me);
   const rows=getDirectReportUsersV46_(me,false).filter(u=>u.Status===ACTIVE_STATUS)
-    .map(u=>({userId:String(u.UserID||''),employeeId:String(u.EmployeeID||''),name:String(u.Name||'')}));
+    .map(u=>({userId:String(u.UserID||''),employeeId:String(u.EmployeeID||''),name:String(u.Name||''),department:String(u.Department||'')}));
   return {success:true,data:{rows:rows}};
 }
 
@@ -194,6 +195,25 @@ function mobileTransferTask_(body) {
     mode:'assignments',date:String(body.date||''),
     assignments:[{taskId:taskId,targetUserId:String(body.targetUserId||'')}]
   }));
+}
+
+function mobileTransferTasks_(body) {
+  const me=requireSession_(body.token,null);
+  const ids=Array.isArray(body.taskIds)?body.taskIds.map(String):[];
+  if(!ids.length||ids.length>100||new Set(ids).size!==ids.length)
+    return {success:false,error:'Select between 1 and 100 different tasks.'};
+  const tasks=sheetToObjects_(SHEET_NAMES.TASK_INSTANCES);
+  const byId={}; tasks.forEach(task=>{byId[String(task.TaskID||'')]=task;});
+  const assignments=[];
+  ids.forEach(id=>{
+    const task=byId[id];
+    if(!task)throw new Error('Selected task was not found.');
+    const own=String(task.AssignedToUserID||'')===String(me.UserID||'');
+    if(!hasPmsRuleV44_(me,own?'TASK_TRANSFER_OWN':'TASK_TRANSFER_TEAM'))
+      throw new Error('Task transfer is not allowed for your role.');
+    assignments.push({taskId:id,targetUserId:String(body.targetUserId||'')});
+  });
+  return mobileData_(api_transferTeamTasksV42(body.token,{mode:'assignments',assignments:assignments}));
 }
 
 function mobileCompleteTask_(body) {

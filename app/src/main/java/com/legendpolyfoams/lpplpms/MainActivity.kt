@@ -316,18 +316,18 @@ private fun TopBar(page:Page,user:User,profile:ProfileData?,unread:Int,onBell:()
     TopAppBar(
         title={
             Row(verticalAlignment=Alignment.CenterVertically){
-                Surface(modifier=Modifier.size(34.dp),shape=RoundedCornerShape(8.dp),color=Color.White){
+                Surface(modifier=Modifier.size(42.dp),shape=RoundedCornerShape(9.dp),color=Color.White){
                     Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){
                         Column(horizontalAlignment=Alignment.CenterHorizontally){
-                            Text("LPPL",fontSize=9.sp,fontWeight=FontWeight.Black,color=LpplGreen)
-                            Text("PMS",fontSize=7.sp,fontWeight=FontWeight.Bold,color=LpplDark)
+                            Text("LPPL",fontSize=11.sp,fontWeight=FontWeight.Black,color=LpplGreen)
+                            Text("PMS",fontSize=9.sp,fontWeight=FontWeight.Black,color=LpplDark)
                         }
                     }
                 }
                 Spacer(Modifier.width(9.dp))
                 Column{
                     Text(title,fontWeight=FontWeight.Black,fontSize=17.sp,color=Color.White)
-                    Text("Legend Polyfoams Pvt. Ltd.",fontSize=12.sp,fontWeight=FontWeight.SemiBold,color=Color(0xFFE5F6E9),maxLines=1,overflow=TextOverflow.Ellipsis)
+                    Text("Legend Polyfoams Pvt. Ltd.",fontSize=14.sp,fontWeight=FontWeight.SemiBold,color=Color(0xFFE5F6E9),maxLines=1,overflow=TextOverflow.Ellipsis)
                 }
             }
         },
@@ -577,9 +577,15 @@ private fun TasksScreen(token:String,boot:BootstrapData,initialTab:String="today
     var result by remember(token,scopeSel,tab){mutableStateOf(ApiClient.cachedTasks(token,scopeSel,tab))}
     var err by remember{mutableStateOf("")}
     var busyId by remember{mutableStateOf("")}
-    var transferTask by remember{mutableStateOf<TaskItem?>(null)}
+    var transferOpen by remember{mutableStateOf(false)}
+    var selecting by remember{mutableStateOf(false)}
+    val selectedIds= remember { mutableStateListOf<String>() }
     var transferTargets by remember{mutableStateOf<List<TransferTarget>>(emptyList())}
     var transferError by remember{mutableStateOf("")}
+    var transferDepartment by remember{mutableStateOf("")}
+    var transferUser by remember{mutableStateOf<TransferTarget?>(null)}
+    var departmentExpanded by remember{mutableStateOf(false)}
+    var employeeExpanded by remember{mutableStateOf(false)}
     val scope=rememberCoroutineScope()
 
     fun reload(force:Boolean=false){
@@ -591,11 +597,31 @@ private fun TasksScreen(token:String,boot:BootstrapData,initialTab:String="today
         }
     }
 
-    LaunchedEffect(scopeSel,tab){reload(false)}
+    LaunchedEffect(scopeSel,tab){selectedIds.clear();selecting=false;reload(false)}
+
+    fun openTransfer(){
+        transferError="";transferDepartment="";transferUser=null;transferTargets=emptyList();transferOpen=true
+        scope.launch{runCatching{ApiClient.transferTargets(token)}
+            .onSuccess{transferTargets=it}
+            .onFailure{transferError=it.message?:"Unable to load employees"}}
+    }
 
     Column(Modifier.fillMaxSize().background(Color(0xFFF7FAF8))){
         if(boot.canViewTeamTasks) Segmented(listOf("MY" to "My","TEAM" to "Team"),scopeSel){scopeSel=it}
         TaskTabs(tab,result?.counts ?: emptyMap()){tab=it}
+        if(result?.tasks?.any{it.canTransfer}==true || selectedIds.isNotEmpty()){
+            Row(Modifier.fillMaxWidth().padding(horizontal=12.dp),verticalAlignment=Alignment.CenterVertically){
+                TextButton(onClick={selecting=!selecting;if(!selecting)selectedIds.clear()}){
+                    Text(if(selecting)"Cancel selection" else "Select tasks to transfer")
+                }
+                Spacer(Modifier.weight(1f))
+                if(selecting){
+                    Button(onClick={openTransfer},enabled=selectedIds.isNotEmpty()){
+                        Text("Transfer selected (${selectedIds.size})")
+                    }
+                }
+            }
+        }
         if(err.isNotBlank()) ErrorCard(err)
         val list=result?.tasks
         if(list==null){
@@ -626,12 +652,16 @@ private fun TasksScreen(token:String,boot:BootstrapData,initialTab:String="today
         } else {
             LazyColumn(Modifier.fillMaxSize().padding(horizontal=10.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
                 items(list.distinctBy{it.instanceId},key={it.instanceId}){task->
-                    TaskRow(task,scopeSel=="TEAM",busyId==task.instanceId,onTransfer={
-                        transferTask=task;transferError="";transferTargets=emptyList()
-                        scope.launch{runCatching{ApiClient.transferTargets(token)}
-                            .onSuccess{transferTargets=it.filter{target->target.employeeId!=task.employeeId}}
-                            .onFailure{transferError=it.message?:"Unable to load employees"}}
-                    },onDone={
+                    TaskRow(task,scopeSel=="TEAM",busyId==task.instanceId,
+                        selecting=selecting,selected=selectedIds.contains(task.instanceId),onSelect={
+                            if(selectedIds.contains(task.instanceId))selectedIds.remove(task.instanceId)
+                            else {
+                                val first=list.firstOrNull{selectedIds.contains(it.instanceId)}
+                                if(first!=null && first.dueDate.take(10)!=task.dueDate.take(10))
+                                    err="Select tasks from one date at a time"
+                                else {err="";selectedIds.add(task.instanceId)}
+                            }
+                        },onTransfer={selectedIds.clear();selectedIds.add(task.instanceId);selecting=true;openTransfer()},onDone={
                         busyId=task.instanceId
                         scope.launch{
                             runCatching{ApiClient.completeTask(token,task.instanceId)}
@@ -648,28 +678,43 @@ private fun TasksScreen(token:String,boot:BootstrapData,initialTab:String="today
             }
         }
     }
-    transferTask?.let{task->
+    if(transferOpen){
+        val chosen=result?.tasks?.filter{selectedIds.contains(it.instanceId)}.orEmpty()
+        val departments=transferTargets.map{it.department}.filter{it.isNotBlank()}.distinct().sorted()
+        val employees=transferTargets.filter{it.department==transferDepartment && chosen.none{task->task.employeeId==it.employeeId}}
         AlertDialog(
-            onDismissRequest={if(busyId.isBlank())transferTask=null},
-            title={Text("Transfer task",fontWeight=FontWeight.Bold)},
-            text={Column(Modifier.heightIn(max=350.dp).verticalScroll(rememberScrollState())){
-                Text(task.title,fontWeight=FontWeight.SemiBold)
-                Text("Only direct reports allowed by PMS rules are listed.",fontSize=11.sp,color=TextMuted)
+            onDismissRequest={if(busyId.isBlank())transferOpen=false},
+            title={Text("Select Department & User",fontWeight=FontWeight.Bold,fontSize=18.sp)},
+            text={Column(verticalArrangement=Arrangement.spacedBy(12.dp)){
+                Text("${chosen.size} task(s) selected",fontSize=12.sp,color=TextMuted)
                 if(transferError.isNotBlank())Text(transferError,color=Color.Red)
                 if(transferTargets.isEmpty()&&transferError.isBlank())CircularProgressIndicator(Modifier.size(20.dp))
-                transferTargets.forEach{target->
-                    TextButton(onClick={
-                        busyId=task.instanceId
-                        scope.launch{runCatching{ApiClient.transferTask(token,task,target.userId)}
-                            .onSuccess{transferTask=null;result=null;reload(true)}
-                            .onFailure{transferError=it.message?:"Transfer failed"}
-                            busyId=""}
-                    },enabled=busyId.isBlank(),modifier=Modifier.fillMaxWidth()){
-                        Text(target.employeeId+" · "+target.name)
+                Box{
+                    OutlinedButton(onClick={departmentExpanded=true},modifier=Modifier.fillMaxWidth(),enabled=departments.isNotEmpty()){
+                        Text(transferDepartment.ifBlank{"Choose a department"},modifier=Modifier.weight(1f));Text("▾")
+                    }
+                    DropdownMenu(expanded=departmentExpanded,onDismissRequest={departmentExpanded=false}){
+                        departments.forEach{dept->DropdownMenuItem(text={Text(dept)},onClick={transferDepartment=dept;transferUser=null;departmentExpanded=false})}
+                    }
+                }
+                Box{
+                    OutlinedButton(onClick={employeeExpanded=true},modifier=Modifier.fillMaxWidth(),enabled=transferDepartment.isNotBlank()){
+                        Text(transferUser?.let{it.employeeId+" · "+it.name}?:"Select employee",modifier=Modifier.weight(1f));Text("▾")
+                    }
+                    DropdownMenu(expanded=employeeExpanded,onDismissRequest={employeeExpanded=false}){
+                        employees.forEach{target->DropdownMenuItem(text={Text(target.employeeId+" · "+target.name)},onClick={transferUser=target;employeeExpanded=false})}
                     }
                 }
             }},
-            confirmButton={TextButton(onClick={transferTask=null},enabled=busyId.isBlank()){Text("Cancel")}}
+            confirmButton={Button(onClick={
+                val target=transferUser?:return@Button
+                busyId="transfer"
+                scope.launch{runCatching{ApiClient.transferTasks(token,chosen,target.userId)}
+                    .onSuccess{transferOpen=false;selectedIds.clear();selecting=false;result=null;reload(true)}
+                    .onFailure{transferError=it.message?:"Transfer failed"}
+                    busyId=""}
+            },enabled=busyId.isBlank()&&transferUser!=null&&chosen.isNotEmpty()){Text("Submit")}},
+            dismissButton={TextButton(onClick={transferOpen=false},enabled=busyId.isBlank()){Text("Cancel")}}
         )
     }
 }
@@ -708,7 +753,7 @@ private fun TaskTabs(selected:String,counts:Map<String,Int>,onSelect:(String)->U
 }
 
 @Composable
-private fun TaskRow(t:TaskItem,isTeam:Boolean,busy:Boolean,onTransfer:()->Unit,onDone:()->Unit){
+private fun TaskRow(t:TaskItem,isTeam:Boolean,busy:Boolean,selecting:Boolean,selected:Boolean,onSelect:()->Unit,onTransfer:()->Unit,onDone:()->Unit){
     Card(
         Modifier.fillMaxWidth(),
         shape=RoundedCornerShape(12.dp),
@@ -721,6 +766,7 @@ private fun TaskRow(t:TaskItem,isTeam:Boolean,busy:Boolean,onTransfer:()->Unit,o
         Column(Modifier.padding(horizontal=12.dp,vertical=10.dp)){
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){
                 Row(verticalAlignment=Alignment.CenterVertically){
+                    if(selecting&&t.canTransfer) Checkbox(checked=selected,onCheckedChange={onSelect()},modifier=Modifier.size(36.dp))
                     Text(t.taskId,fontWeight=FontWeight.Black,fontSize=12.sp,color=Color(0xFF078A37))
                     if(t.frequency.isNotBlank()){
                         Spacer(Modifier.width(5.dp))
@@ -748,7 +794,7 @@ private fun TaskRow(t:TaskItem,isTeam:Boolean,busy:Boolean,onTransfer:()->Unit,o
             Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){
                 val meta=listOf(t.category,if(isTeam)t.employeeName else "").filter{it.isNotBlank()}.joinToString(" • ")
                 Text(meta.ifBlank{t.department},fontSize=12.sp,color=Color(0xFF60758B),modifier=Modifier.weight(1f),maxLines=1,overflow=TextOverflow.Ellipsis)
-                if(t.canTransfer){
+                if(t.canTransfer&&!selecting){
                     TextButton(onClick=onTransfer,enabled=!busy){Text("Transfer",fontSize=11.sp)}
                 }
                 if(t.canComplete && !t.status.equals("completed",true)){

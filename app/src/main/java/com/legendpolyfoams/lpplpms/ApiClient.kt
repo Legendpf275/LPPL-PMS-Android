@@ -58,7 +58,7 @@ data class ProfileData(
     val department:String="", val designation:String="", val role:String="", val isManager:Boolean=false,
     val profilePhotoDataUri:String=""
 )
-data class TransferTarget(val userId:String, val employeeId:String, val name:String)
+data class TransferTarget(val userId:String, val employeeId:String, val name:String, val department:String)
 
 class ApiException(message:String):Exception(message)
 
@@ -202,16 +202,20 @@ object ApiClient {
 
     suspend fun transferTargets(token:String):List<TransferTarget>{
         val d=jo(call("get_transfer_targets",token),"data")
-        return arr(d,"rows").map{val o=it.asJsonObject;TransferTarget(s(o,"userId"),s(o,"employeeId"),s(o,"name"))}
+        return arr(d,"rows").map{val o=it.asJsonObject;TransferTarget(s(o,"userId"),s(o,"employeeId"),s(o,"name"),s(o,"department"))}
     }
 
     suspend fun transferTask(token:String,task:TaskItem,targetUserId:String){
+        transferTasks(token,listOf(task),targetUserId)
+    }
+
+    suspend fun transferTasks(token:String,tasks:List<TaskItem>,targetUserId:String){
+        require(tasks.isNotEmpty()) { "Select at least one task" }
         val p=JsonObject().apply{
-            addProperty("taskId",task.instanceId)
             addProperty("targetUserId",targetUserId)
-            addProperty("date",task.dueDate.take(10))
+            add("taskIds",JsonArray().apply{tasks.forEach{add(it.instanceId)}})
         }
-        call("transfer_task",token,p)
+        call("transfer_tasks",token,p)
         taskCache.keys.filter{it.startsWith("$token|")}.forEach{taskCache.remove(it)}
         dashboardCache=null
     }
