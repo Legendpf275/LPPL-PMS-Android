@@ -1091,7 +1091,7 @@ private fun ShiftRosterScreen(token:String,boot:BootstrapData){
                             options=shiftTypes.map{it to it},
                             onSelect={
                                 selectedShiftType=it
-                                selectedShiftId=shiftOptions.firstOrNull{sh->sh.shiftType==it}?.shiftId.orEmpty()
+                                selectedShiftId=data!!.shifts.firstOrNull{sh->sh.shiftType==it}?.shiftId.orEmpty()
                             }
                         )
                         SelectPopupField(
