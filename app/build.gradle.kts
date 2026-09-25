@@ -11,8 +11,8 @@ android {
         applicationId = "com.legendpolyfoams.lpplpms"
         minSdk = 26
         targetSdk = 35
-        versionCode = 107
-        versionName = "1.3.3-native"
+        versionCode = 108
+        versionName = "1.3.4-native"
         buildConfigField("String", "BASE_API_URL", "\"https://script.google.com/macros/s/AKfycbxG9BCPDBsQcrViIbJs7JTfPEvT5a4O9f8NiFwRu0Ij5JKx6PrhqQninPDZz4K2E_QO/exec\"")
     }
     val releaseKeystorePath = System.getenv("LPPL_KEYSTORE_PATH")

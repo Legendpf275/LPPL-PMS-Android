@@ -84,14 +84,6 @@ function api_getTeamTaskWorkspaceV43(sessionToken,filters){
     const instanceRows=[];
     const seenTeamInstances={};
     const instances=dedupeTaskInstancesByLogicalV48_(sheetToObjects_(SHEET_NAMES.TASK_INSTANCES),masterById);
-    const todayLogical={};
-    instances.forEach(task=>{
-      const assignedId=String(task.AssignedToUserID||'');
-      if(!userById[assignedId]||teamTaskBucketV42_(task,todayKey)!=='today')return;
-      const master=masterById[String(task.MasterID||'')]||{};
-      const logical=String(master.RecurringTaskID||master.AssignmentGroupID||master.MasterID||task.MasterID||'');
-      if(logical)todayLogical[assignedId+'|'+logical]=true;
-    });
 
     instances.forEach(task=>{
       const assignedId=String(task.AssignedToUserID||''), employee=userById[assignedId]; if(!employee)return;
@@ -105,8 +97,6 @@ function api_getTeamTaskWorkspaceV43(sessionToken,filters){
       const frequency=String(master.Frequency||'');
       if(search){const hay=[task.TaskID,logicalId,task.TaskDescription,task.Category,frequency,employee.EmployeeID,employee.Name,employee.Designation,employee.Department,task.ShiftCode].join(' ').toLowerCase();if(hay.indexOf(search)===-1)return;}
       const bucket=teamTaskBucketV42_(task,todayKey);
-      // A recurring task visible Today should not also repeat under Upcoming.
-      if(bucket==='upcoming'&&todayLogical[assignedId+'|'+logicalId])return;
       if(bucket==='upcoming'&&typeof isTaskInUpcomingWindowV45_==='function'&&!isTaskInUpcomingWindowV45_(task.DueDate))return;
       counts.all++; if(counts[bucket]!==undefined)counts[bucket]++;
       if(tab!=='unique'){

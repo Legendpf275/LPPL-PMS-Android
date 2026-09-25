@@ -34,7 +34,7 @@ data class BootstrapData(
 data class DashboardData(val raw:JsonObject=JsonObject())
 data class LoginResult(val token:String,val user:User)
 data class TaskResult(val tasks:List<TaskItem>, val counts:Map<String,Int> = emptyMap())
-data class TicketUser(val userId:String,val employeeId:String,val name:String,val department:String)
+data class TicketUser(val userId:String,val employeeId:String,val name:String,val department:String,val managerName:String)
 data class TicketUpload(val bytes:ByteArray,val fileName:String,val mimeType:String)
 data class TicketResult(val mine:List<TicketItem>,val team:List<TicketItem>,val canViewTeam:Boolean,val users:List<TicketUser> = emptyList())
 data class ShiftRow(
@@ -241,7 +241,7 @@ object ApiClient {
             arr(d,"mine").map{parseTicket(it.asJsonObject)},
             arr(d,"team").map{parseTicket(it.asJsonObject)},
             b(d,"canViewTeam"),
-            arr(d,"ticketUsers").map{val u=it.asJsonObject;TicketUser(s(u,"UserID"),s(u,"EmployeeID"),s(u,"Name"),s(u,"Department"))}
+            arr(d,"ticketUsers").map{val u=it.asJsonObject;TicketUser(s(u,"UserID"),s(u,"EmployeeID"),s(u,"Name"),s(u,"Department"),s(u,"ManagerName"))}
         ).also{ticketCache=CacheEntry(now,it)}
     }
 

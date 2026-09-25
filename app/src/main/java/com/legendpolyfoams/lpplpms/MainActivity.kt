@@ -13,6 +13,7 @@ import android.app.DatePickerDialog
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
@@ -37,8 +38,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontWeight
@@ -991,6 +990,8 @@ private fun TicketsScreen(token:String,boot:BootstrapData){
         ownerOk && statusOk && deptOk && catOk && urgOk
     }
 
+    BackHandler(enabled=createOpen&&!createBusy){stopRecording(false);createOpen=false}
+
     Box(Modifier.fillMaxSize().background(Color.White)){
         Column(Modifier.fillMaxSize()){
             if(boot.canViewTeamTickets){
@@ -1075,9 +1076,7 @@ private fun TicketsScreen(token:String,boot:BootstrapData){
         ){Icon(Icons.Default.Add,"New Ticket")}
 
         if(createOpen){
-            Dialog(onDismissRequest={if(!createBusy){stopRecording(false);createOpen=false}},
-                properties=DialogProperties(usePlatformDefaultWidth=false)){
-                Surface(Modifier.fillMaxSize(),color=Color.White){
+                Surface(Modifier.fillMaxSize().imePadding(),color=Color.White){
                     Column(Modifier.fillMaxSize()){
                         Row(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=10.dp),verticalAlignment=Alignment.CenterVertically){
                             IconButton(onClick={stopRecording(false);createOpen=false},enabled=!createBusy){Icon(Icons.Default.Close,"Close")}
@@ -1091,22 +1090,35 @@ private fun TicketsScreen(token:String,boot:BootstrapData){
                                 data?.users?.filter{it.department==newDepartment}?.map{it.employeeId+" · "+it.name}.orEmpty()) { label ->
                                 newUser=data?.users?.firstOrNull{it.department==newDepartment && it.employeeId+" · "+it.name==label}
                             }
+                            OutlinedTextField(
+                                value=if(newUser==null)"" else newUser?.managerName.orEmpty().ifBlank{"Not mapped"},
+                                onValueChange={},readOnly=true,
+                                label={Text("Department manager / reporting manager")},
+                                modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(4.dp)
+                            )
                             TicketSelect("Category *",newCategory,boot.ticketCategories){newCategory=it}
                             TicketSelect("Urgency *",newPriority,boot.priorities){newPriority=it}
-                            OutlinedButton(onClick={
+                            Surface(
+                                shape=RoundedCornerShape(4.dp),color=Color.White,
+                                border=androidx.compose.foundation.BorderStroke(1.dp,Color(0xFF79747E)),
+                                modifier=Modifier.fillMaxWidth().clickable(onClick={
                                 val day=runCatching{LocalDate.parse(newDate)}.getOrDefault(LocalDate.now())
                                 DatePickerDialog(context,{_,year,month,dayOfMonth->
                                     newDate=LocalDate.of(year,month+1,dayOfMonth).toString()
                                 },day.year,day.monthValue-1,day.dayOfMonth).apply{
                                     datePicker.minDate=System.currentTimeMillis()-86400000L
                                 }.show()
-                            },modifier=Modifier.fillMaxWidth()){
-                                Icon(Icons.Default.CalendarMonth,null)
-                                Spacer(Modifier.width(8.dp))
-                                Text("Due date *: $newDate",modifier=Modifier.weight(1f))
+                            })){
+                                Row(Modifier.fillMaxWidth().heightIn(min=56.dp).padding(horizontal=16.dp),verticalAlignment=Alignment.CenterVertically){
+                                    Column(Modifier.weight(1f)){
+                                        TicketFieldLabel("Due date",required=true)
+                                        Text(newDate,color=TextPrimary)
+                                    }
+                                    Icon(Icons.Default.CalendarMonth,"Choose date",tint=LpplDark)
+                                }
                             }
-                            OutlinedTextField(newMachine,{newMachine=it},label={Text("Machine / Area (optional)")},singleLine=true,modifier=Modifier.fillMaxWidth())
-                            OutlinedTextField(newDescription,{newDescription=it},label={Text("Description *")},minLines=3,modifier=Modifier.fillMaxWidth())
+                            OutlinedTextField(newMachine,{newMachine=it},label={Text("Machine / Area (optional)")},singleLine=true,modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(4.dp))
+                            OutlinedTextField(newDescription,{newDescription=it},label={TicketFieldLabel("Description",required=true)},minLines=3,modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(4.dp))
                             Text("Attachment (optional)",fontWeight=FontWeight.SemiBold)
                             Row(horizontalArrangement=Arrangement.spacedBy(7.dp)){
                                 OutlinedButton(onClick={files.launch(arrayOf("image/*","application/pdf","video/*"))},modifier=Modifier.weight(1f),contentPadding=PaddingValues(horizontal=6.dp)){
@@ -1150,7 +1162,7 @@ private fun TicketsScreen(token:String,boot:BootstrapData){
                             if(createError.isNotBlank())Text(createError,color=Color.Red,fontSize=12.sp)
                         }
                         HorizontalDivider(color=Color(0xFFE2E8E3))
-                        Row(Modifier.fillMaxWidth().padding(12.dp),horizontalArrangement=Arrangement.spacedBy(10.dp)){
+                        Row(Modifier.fillMaxWidth().heightIn(min=64.dp).padding(horizontal=12.dp,vertical=10.dp),horizontalArrangement=Arrangement.spacedBy(10.dp)){
                             OutlinedButton(onClick={stopRecording(false);createOpen=false},enabled=!createBusy,modifier=Modifier.weight(1f)){Text("Cancel")}
                             Button(onClick={
                                 val parsed=runCatching{LocalDate.parse(newDate)}.getOrNull()
@@ -1177,7 +1189,6 @@ private fun TicketsScreen(token:String,boot:BootstrapData){
                         }
                     }
                 }
-            }
         }
 
         selectedTicket?.let{t->
@@ -1211,16 +1222,30 @@ private fun TicketsScreen(token:String,boot:BootstrapData){
 private fun TicketSelect(label:String,value:String,options:List<String>,onSelect:(String)->Unit){
     var expanded by remember{mutableStateOf(false)}
     Box{
-        OutlinedButton(onClick={expanded=true},enabled=options.isNotEmpty(),modifier=Modifier.fillMaxWidth()){
-            Column(Modifier.weight(1f)){
-                Text(label,fontSize=11.sp,color=TextMuted)
-                Text(value.ifBlank{"Select"},maxLines=1,overflow=TextOverflow.Ellipsis)
+        Surface(
+            shape=RoundedCornerShape(4.dp),color=Color.White,
+            border=androidx.compose.foundation.BorderStroke(1.dp,Color(0xFF79747E)),
+            modifier=Modifier.fillMaxWidth().clickable(enabled=options.isNotEmpty()){expanded=true}
+        ){
+            Row(Modifier.fillMaxWidth().heightIn(min=56.dp).padding(horizontal=16.dp),verticalAlignment=Alignment.CenterVertically){
+                Column(Modifier.weight(1f)){
+                    TicketFieldLabel(label.removeSuffix(" *"),required=label.endsWith("*"))
+                    Text(value.ifBlank{"Select"},maxLines=1,overflow=TextOverflow.Ellipsis,color=TextPrimary)
+                }
+                Icon(Icons.Default.ArrowDropDown,null,tint=LpplDark)
             }
-            Text("▾")
         }
         DropdownMenu(expanded=expanded,onDismissRequest={expanded=false}){
             options.forEach{option->DropdownMenuItem(text={Text(option)},onClick={onSelect(option);expanded=false})}
         }
+    }
+}
+
+@Composable
+private fun TicketFieldLabel(text:String,required:Boolean=false){
+    Row(verticalAlignment=Alignment.CenterVertically){
+        Text(text,fontSize=12.sp,color=TextMuted)
+        if(required)Text(" *",fontSize=13.sp,fontWeight=FontWeight.Bold,color=Color(0xFFD32F2F))
     }
 }
 
