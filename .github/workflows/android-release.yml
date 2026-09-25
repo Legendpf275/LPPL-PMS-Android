@@ -1,9 +1,6 @@
 name: Build Signed LPPL PMS Release APK
 on:
   workflow_dispatch:
-  push:
-    branches: [native-ai-studio-rebuild]
-    paths: [.github/workflows/android-release.yml]
 jobs:
   release:
     runs-on: ubuntu-latest
