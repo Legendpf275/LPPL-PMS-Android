@@ -160,6 +160,7 @@ function mobileTask_(row, masterMap) {
   const emp = userId ? getUserById_(userId) : null;
   return {
     taskId:logicalTaskId,
+    logicalId:String(row.RecurringTaskID || master.RecurringTaskID || master.AssignmentGroupID || master.MasterID || row.MasterID || logicalTaskId),
     instanceId:String(row.TaskID || ''),
     title:String(row.TaskDescription || ''),
     category:String(row.Category || master.Category || ''),

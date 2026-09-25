@@ -16,7 +16,7 @@ data class User(
 data class TaskItem(
     val taskId:String="", val instanceId:String="", val title:String="", val category:String="", val department:String="",
     val employeeName:String="", val employeeId:String="", val dueDate:String="", val frequency:String="", val status:String="Pending",
-    val proofRequired:Boolean=false, val canComplete:Boolean=true, val canTransfer:Boolean=false
+    val proofRequired:Boolean=false, val canComplete:Boolean=true, val canTransfer:Boolean=false, val logicalId:String=""
 )
 data class TicketItem(
     val ticketId:String="", val description:String="", val department:String="", val category:String="", val urgency:String="",
@@ -107,11 +107,11 @@ object ApiClient {
     private fun arr(o:JsonObject,k:String):JsonArray=o.get(k)?.takeIf{it.isJsonArray}?.asJsonArray ?: JsonArray()
 
     private fun parseUser(o:JsonObject)=User(s(o,"userId"),s(o,"employeeId"),s(o,"name"),s(o,"department"),s(o,"designation"),s(o,"effectiveRole").ifBlank{"Employee"},b(o,"isManager"),s(o,"profilePhotoUrl"))
-    private fun parseTask(o:JsonObject)=TaskItem(s(o,"taskId"),s(o,"instanceId"),s(o,"title"),s(o,"category"),s(o,"department"),s(o,"employeeName"),s(o,"employeeId"),s(o,"dueDate"),s(o,"frequency"),s(o,"status").ifBlank{"Pending"},b(o,"proofRequired"),b(o,"canComplete"),b(o,"canTransfer"))
+    private fun parseTask(o:JsonObject)=TaskItem(s(o,"taskId"),s(o,"instanceId"),s(o,"title"),s(o,"category"),s(o,"department"),s(o,"employeeName"),s(o,"employeeId"),s(o,"dueDate"),s(o,"frequency"),s(o,"status").ifBlank{"Pending"},b(o,"proofRequired"),b(o,"canComplete"),b(o,"canTransfer"),s(o,"logicalId"))
     private fun dedupeTasks(rows:List<TaskItem>):List<TaskItem>{
         val unique=linkedMapOf<String,TaskItem>()
         rows.forEach{task->
-            val logical=task.taskId.ifBlank{task.instanceId}
+            val logical=task.logicalId.ifBlank{task.taskId}.ifBlank{task.instanceId}
             val key=listOf(task.employeeId,logical,task.dueDate.take(10)).joinToString("|")
             val previous=unique[key]
             if(previous==null || (task.status.equals("Completed",true) && !previous.status.equals("Completed",true))) unique[key]=task
@@ -196,6 +196,12 @@ object ApiClient {
             val d=jo(call("get_task_bundle",token),"data")
             cacheTaskBundle(token,d)
         }
+    }
+
+    suspend fun refreshMyTaskBundle(token:String):Map<String,Int>{
+        val d=jo(call("get_task_bundle",token),"data")
+        cacheTaskBundle(token,d)
+        return cachedTasks(token,"MY","today")?.counts.orEmpty()
     }
 
     suspend fun prefetchTodayTasks(token:String){ prefetchTaskBundle(token) }

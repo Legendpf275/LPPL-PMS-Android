@@ -431,11 +431,13 @@ private fun DashboardScreen(
     onShifts:()->Unit
 ){
     var data by remember{mutableStateOf(ApiClient.cachedDashboard())}
+    var myTaskCounts by remember(token){mutableStateOf<Map<String,Int>>(emptyMap())}
     var err by remember{mutableStateOf("")}
     val today=remember{LocalDate.now()}
     val dateText=remember(today){today.format(DateTimeFormatter.ofPattern("EEEE, dd MMM yyyy",Locale.ENGLISH))}
     LaunchedEffect(token){
-        runCatching{ApiClient.dashboard(token)}.onSuccess{data=it}.onFailure{err=it.message?:""}
+        launch { runCatching{ApiClient.refreshMyTaskBundle(token)}.onSuccess{myTaskCounts=it} }
+        runCatching{ApiClient.dashboard(token,true)}.onSuccess{data=it}.onFailure{err=it.message?:""}
     }
 
     val raw=data?.raw
@@ -443,11 +445,11 @@ private fun DashboardScreen(
     val counts=raw?.getAsJsonObject("counts")
     val cards=raw?.getAsJsonObject("cards")
     val personal=mode=="PERSONAL" || mode.isBlank()
-    val todayCount=if(personal) counts?.get("today")?.asInt?:0 else cards?.get("today")?.asInt?:0
+    val todayCount=myTaskCounts["today"] ?: ApiClient.cachedTasks(token,"MY","today")?.tasks?.size ?: 0
     val completed=if(personal) counts?.get("completedToday")?.asInt?:0 else cards?.get("completedToday")?.asInt?:0
-    val overdue=if(personal) counts?.get("overdue")?.asInt?:0 else cards?.get("overdue")?.asInt?:0
-    val notDone=if(personal) counts?.get("notDone")?.asInt?:0 else cards?.get("notDone")?.asInt?:0
-    val onLeave=if(personal) counts?.get("onLeave")?.asInt?:0 else cards?.get("onLeave")?.asInt?:0
+    val overdue=myTaskCounts["overdue"] ?: 0
+    val notDone=myTaskCounts["notdone"] ?: 0
+    val onLeave=myTaskCounts["onleave"] ?: 0
     val openTickets=if(personal) counts?.get("openTickets")?.asInt?:0 else cards?.get("openTickets")?.asInt?:0
     val completion=if(personal) raw?.get("completionRate")?.asInt?:0 else cards?.get("completionRate")?.asInt?:0
     val greetingName=boot.user.name.ifBlank { "Employee" }
@@ -508,8 +510,8 @@ private fun DashboardScreen(
             }
             item{
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)){
-                    DashboardMetricCard(if(personal)"My Overdue" else "Company Overdue",overdue,"Requires action",Icons.Default.WarningAmber,Color(0xFFE60023),Modifier.weight(1f)){onTaskTab("overdue")}
-                    DashboardMetricCard(if(personal)"My Not Done" else "Company Not Done",notDone,"Past missed tasks",Icons.Default.Cancel,Color(0xFFF06A00),Modifier.weight(1f)){onTaskTab("notdone")}
+                    DashboardMetricCard("My Overdue",overdue,"Requires action",Icons.Default.WarningAmber,Color(0xFFE60023),Modifier.weight(1f)){onTaskTab("overdue")}
+                    DashboardMetricCard("My Not Done",notDone,"Past missed tasks",Icons.Default.Cancel,Color(0xFFF06A00),Modifier.weight(1f)){onTaskTab("notdone")}
                 }
             }
             item{
@@ -614,7 +616,7 @@ private fun TasksScreen(token:String,boot:BootstrapData,initialTab:String="today
         }
     }
 
-    LaunchedEffect(scopeSel,tab){selectedIds.clear();selecting=false;reload(false)}
+    LaunchedEffect(scopeSel,tab){selectedIds.clear();selecting=false;reload(true)}
 
     fun openTransfer(){
         transferError="";transferDepartment="";transferUser=null;transferTargets=emptyList();transferOpen=true
